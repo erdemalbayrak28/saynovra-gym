@@ -23,6 +23,8 @@ const config: Config = {
   DB_PATH: ':memory:',
   GYM_CAPACITY: 85,
   GYM_TIMEZONE: TZ,
+  DEMO_SIMULATION: false,
+  DEMO_MIN_INSIDE: 12,
 };
 
 describe('training API', () => {

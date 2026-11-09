@@ -6,6 +6,7 @@ import { loadConfig } from './config.ts';
 import { openDb } from './db.ts';
 import { LiveHub } from './live.ts';
 import { errorFields, log } from './log.ts';
+import { DemoSimulator } from './simulator.ts';
 
 function lanAddresses(): string[] {
   return Object.values(networkInterfaces())
@@ -26,8 +27,12 @@ function main(): void {
   }) as Server;
   live.attach(server);
 
+  const simulator = config.DEMO_SIMULATION ? new DemoSimulator({ db, live, config, now: () => new Date() }) : null;
+  simulator?.start();
+
   const shutdown = (signal: string) => {
     log.info('shutting down', { signal });
+    simulator?.stop();
     live.close();
     server.close(() => {
       db.close();

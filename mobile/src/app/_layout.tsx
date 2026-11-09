@@ -55,6 +55,7 @@ function RootNavigator() {
           <Stack.Screen name="program/[id]" />
           <Stack.Screen name="workout" options={{ gestureEnabled: false }} />
           <Stack.Screen name="progress" />
+          <Stack.Screen name="chat/[id]" />
         </Stack.Protected>
         <Stack.Protected guard={status !== 'signedIn'}>
           <Stack.Screen name="login" />

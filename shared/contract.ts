@@ -59,6 +59,18 @@ export function createGateCode(
   return [GATE_CODE_PREFIX, memberId, step, DIRECTION_CHAR[direction], seq, signature].join('.');
 }
 
+// Gate messages always start with a digit, so this label can never be confused with one.
+const QR_KEY_ID_LABEL = 'novra:qr-key-id';
+
+/**
+ * Short fingerprint of a member's gate key. It is an HMAC of a fixed label, so it reveals nothing
+ * about the key and cannot sign a gate message. The phone compares its own with the one in /me to
+ * notice a key that changed on the server (a reset demo database) and fetches the new key.
+ */
+export function qrKeyId(sign: GateSigner): string {
+  return sign(QR_KEY_ID_LABEL).slice(0, GATE_SIGNATURE_LENGTH);
+}
+
 export function parseGateCode(raw: string): GateCode | null {
   const match = CODE_PATTERN.exec(raw.trim());
   if (!match) return null;
@@ -145,9 +157,14 @@ export interface MemberProfile {
 
 export interface MemberLoginResponse {
   token: string;
-  /** Hex-encoded HMAC key for gate codes. Returned only at login; store it in secure storage. */
+  /** Hex-encoded HMAC key for gate codes. Store it in secure storage; /me/qr-key hands out a changed one. */
   qrSecret: string;
   member: MemberProfile;
+}
+
+export interface QrKeyResponse {
+  qrSecret: string;
+  qrKeyId: string;
 }
 
 export interface StaffLoginResponse {
@@ -162,6 +179,8 @@ export interface MeResponse {
   lastCheckinAt: string | null;
   /** Goes into the gate code; see GateCode.seq. */
   presenceSeq: number;
+  /** Fingerprint of the current gate key (see qrKeyId); differs from the phone's when its key is out of date. */
+  qrKeyId: string;
   gym: GymStatus;
 }
 
@@ -198,7 +217,138 @@ export interface StaffSummary {
   todayDenied: number;
 }
 
-export type LiveEvent = { type: 'checkin'; checkin: CheckinDto; gym: GymStatus };
+export type LiveEvent =
+  | { type: 'checkin'; checkin: CheckinDto; gym: GymStatus }
+  /** The list of open spotter posts changed; radar screens refetch. */
+  | { type: 'radar' }
+  /** A spot request was created or changed state; sent to both members involved. */
+  | { type: 'spot_request'; request: SpotRequestDto }
+  | { type: 'spot_message'; message: SpotMessageDto }
+  /** Gym floor feed for staff screens. */
+  | { type: 'floor'; event: FloorEvent };
+
+// ---------------------------------------------------------------------------
+// Gym floor: occupancy and buddy radar
+// ---------------------------------------------------------------------------
+
+export type OccupancyLevel = 'calm' | 'normal' | 'busy';
+
+export const OCCUPANCY_LEVEL_TEXT: Record<OccupancyLevel, string> = {
+  calm: 'Sakin',
+  normal: 'Normal',
+  busy: 'Yoğun',
+};
+
+export interface HourlyOccupancy {
+  hour: number;
+  /** Average number of members inside at half past this hour, same weekday, last 4 weeks. */
+  expected: number;
+  pct: number;
+}
+
+export interface OccupancyResponse {
+  insideCount: number;
+  capacity: number;
+  pct: number;
+  level: OccupancyLevel;
+  /** e.g. "Pazartesi": the hourly profile is built from this weekday. */
+  weekdayName: string;
+  currentHour: number;
+  hours: HourlyOccupancy[];
+  /** Quietest remaining hour today, if any. */
+  quietestUpcoming: HourlyOccupancy | null;
+}
+
+export type MuscleGroup = 'chest_back' | 'shoulders_arms' | 'legs' | 'full_body';
+
+export const MUSCLE_GROUP_TEXT: Record<MuscleGroup, string> = {
+  chest_back: 'Göğüs & Sırt',
+  shoulders_arms: 'Omuz & Kol',
+  legs: 'Bacak',
+  full_body: 'Tüm vücut',
+};
+
+/** Places on the gym floor a post can point to. A fixed list: no free-text locations. */
+export const GYM_SPOTS = ['Bench 1', 'Bench 2', 'Squat rack 1', 'Squat rack 2', 'Kablo istasyonu', 'Serbest ağırlık', 'Makine alanı'] as const;
+export type GymSpot = (typeof GYM_SPOTS)[number];
+
+export const SPOT_NOTE_MAX = 140;
+export const SPOT_MESSAGE_MAX = 280;
+
+export type SpotRequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';
+
+/** How other members see someone: first name and initial only. */
+export interface PublicMember {
+  id: number;
+  displayName: string;
+  initials: string;
+}
+
+export interface SpotterPostDto {
+  id: number;
+  member: PublicMember;
+  muscleGroup: MuscleGroup;
+  location: GymSpot;
+  note: string;
+  createdAt: string;
+  /** When the owner came through the gate. */
+  enteredAt: string | null;
+  mine: boolean;
+  /** The viewer's request to this post, if any. */
+  myRequest: { id: number; status: SpotRequestStatus } | null;
+}
+
+export interface SpotRequestDto {
+  id: number;
+  postId: number;
+  status: SpotRequestStatus;
+  from: PublicMember;
+  to: PublicMember;
+  location: GymSpot;
+  muscleGroup: MuscleGroup;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+export interface SpotMessageDto {
+  id: number;
+  requestId: number;
+  senderId: number;
+  body: string;
+  createdAt: string;
+}
+
+export interface RadarResponse {
+  /** The radar is only for members inside the gym. */
+  inside: boolean;
+  myPost: SpotterPostDto | null;
+  /** Pending requests to my post. */
+  incoming: SpotRequestDto[];
+  /** My pending requests to others. */
+  outgoing: SpotRequestDto[];
+  /** Accepted pairings I am part of (chat is open while both are inside). */
+  matches: SpotRequestDto[];
+  posts: SpotterPostDto[];
+}
+
+export interface OpenPostRequest {
+  muscleGroup: MuscleGroup;
+  location: GymSpot;
+  note: string;
+}
+
+export interface ChatResponse {
+  request: SpotRequestDto;
+  messages: SpotMessageDto[];
+  canSend: boolean;
+}
+
+export interface FloorEvent {
+  id: string;
+  at: string;
+  kind: 'post_opened' | 'matched';
+  text: string;
+}
 
 // ---------------------------------------------------------------------------
 // Training

@@ -8,6 +8,7 @@ import type { AppEnv } from './middleware.ts';
 import { HttpProblem, problemResponse, toProblem } from './problem.ts';
 import { authRoutes } from './routes/auth.ts';
 import { gateRoutes } from './routes/gate.ts';
+import { gymRoutes } from './routes/gym.ts';
 import { meRoutes } from './routes/me.ts';
 import { programRoutes } from './routes/programs.ts';
 import { staffRoutes } from './routes/staff.ts';
@@ -31,6 +32,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/auth', authRoutes(deps));
   app.route('/me', meRoutes(deps));
   app.route('/programs', programRoutes(deps));
+  app.route('/gym', gymRoutes(deps));
   app.route('/gate', gateRoutes(deps));
   app.route('/staff', staffRoutes(deps));
 

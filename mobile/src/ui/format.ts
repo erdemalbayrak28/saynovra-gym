@@ -9,6 +9,20 @@ export function longDate(isoDate: string): string {
   return `${day} ${MONTHS[month - 1] ?? ''} ${year}`;
 }
 
+/** "5 dk önce", "1 sa 10 dk önce"; for timestamps from the server. */
+export function minutesAgo(iso: string, now = Date.now()): string {
+  const minutes = Math.max(0, Math.round((now - Date.parse(iso)) / 60000));
+  if (minutes < 1) return 'az önce';
+  if (minutes < 60) return `${minutes} dk önce`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} sa önce` : `${hours} sa ${rest} dk önce`;
+}
+
+export function hourLabel(hour: number): string {
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
 /** "2026-10-12" -> "12 Eki" for chart labels. */
 export function shortDate(isoDate: string): string {
   const [, month, day] = isoDate.split('-').map(Number);

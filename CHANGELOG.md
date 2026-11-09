@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-09 · Sprint 3: salon zekâsı ve buddy
+
+- Buddy radarı (yeni "Buddy" sekmesi): salondaki üyeler spotter ilanı açar (kas grubu, salondaki yer, kısa not), diğerleri spot isteği gönderir, ilan sahibi kabul eder ya da reddeder, eşleşince iki tarafın ilanı kapanır ve kısa mesajlaşma açılır (hazır cevaplar). Biri kapıdan çıkınca ilan kapanır, eşleşme ve sohbet biter. Radar salon dışından görünmez; isimler "Burak B." biçiminde.
+- Yeni istek, kabul ve mesajlar canlı geliyor; Buddy sekmesinde bildirim noktası yanıyor.
+- Saatlik yoğunluk: son 4 haftada aynı günün gerçek giriş kayıtlarından saat saat ortalama doluluk. Ana sayfada grafik ve "bugün kalan saatlerde en sakin" önerisi.
+- Ana sayfaya, salondayken "Salondaki buddy'ler" önizlemesi eklendi.
+- Kapı ekranına "Salon içi akış": spotter ilanları ve eşleşmeler canlı.
+- Alt menü beş sekme oldu, QR tam ortada.
+- Demo modu (`DEMO_SIMULATION=true`, varsayılan kapalı): kurgu üyeler kapıdan girip çıkar, salonda en az 12 kişi tutulur, dört buddy ilan açıp isteklere ve mesajlara cevap verir, demo üye ilan açarsa biri istek gönderir.
+- Örnek veri 486 kurgu üyeye çıktı (akşam zirvesi yaklaşık %40). Bazı üyeliklerin gelecekte başladığı bir hata düzeltildi.
+- Kapı anahtarı kendini yeniliyor: örnek veri yenilenince üyenin anahtarı değişiyor ama telefondaki oturum açık kalıyordu, telefon eski anahtarla imzaladığı için kapı her kodu "Geçersiz kod" diye reddediyordu (kurucunun telefonunda yaşanan sorun). `/me` artık anahtarın parmak izini veriyor (anahtarı açık etmeyen bir HMAC), telefon farkı görünce yeni anahtarı `/me/qr-key` ile alıyor. Arada QR ekranı reddedilecek kod yerine "Kapı anahtarın yenileniyor" gösteriyor.
+- Testler 50'den 67'ye çıktı: istek durum makinesi, yoğunluk hesabı, radar ve sohbet akışı, demo simülasyonu, anahtar yenileme.
+
 ## 2026-11-09 · Sprint 2: antrenman
 
 - Antrenman, kurucunun isteğiyle işaretleme listesi yerine programa göre çalışıyor: üye hazır programlardan birini seçer, uygulama sıradaki günü, hareketi, seti, kiloyu ve tekrarı söyler.

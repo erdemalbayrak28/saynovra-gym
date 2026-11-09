@@ -1,14 +1,22 @@
 import type {
+  ChatResponse,
   Enrollment,
   ExerciseProgressResponse,
   LogSetRequest,
   MeResponse,
   MemberLoginResponse,
   MyTrainingResponse,
+  OccupancyResponse,
+  OpenPostRequest,
   Problem,
   ProgramDetail,
   ProgramSummary,
   ProgressResponse,
+  QrKeyResponse,
+  RadarResponse,
+  SpotMessageDto,
+  SpotRequestDto,
+  SpotterPostDto,
   WorkoutDto,
   WorkoutSetDto,
   WorkoutSummary,
@@ -58,6 +66,7 @@ export const api = {
   login: (phone: string, password: string) =>
     request<MemberLoginResponse>('/auth/member/login', { method: 'POST', body: { phone, password } }),
   me: (token: string) => request<MeResponse>('/me', { token }),
+  qrKey: (token: string) => request<QrKeyResponse>('/me/qr-key', { token }),
 
   programs: (token: string) => request<ProgramSummary[]>('/programs', { token }),
   program: (token: string, id: number) => request<ProgramDetail>(`/programs/${id}`, { token }),
@@ -71,4 +80,14 @@ export const api = {
 
   progress: (token: string) => request<ProgressResponse>('/me/progress', { token }),
   exerciseProgress: (token: string, exerciseId: number) => request<ExerciseProgressResponse>(`/me/progress/${exerciseId}`, { token }),
+
+  occupancy: (token: string) => request<OccupancyResponse>('/gym/occupancy', { token }),
+  radar: (token: string) => request<RadarResponse>('/me/radar', { token }),
+  openPost: (token: string, input: OpenPostRequest) => post<SpotterPostDto>('/me/radar/post', token, input),
+  closePost: (token: string) => post<null>('/me/radar/post/close', token),
+  sendSpotRequest: (token: string, postId: number) => post<SpotRequestDto>('/me/spot-requests', token, { postId }),
+  actOnSpotRequest: (token: string, requestId: number, action: 'accept' | 'decline' | 'cancel') =>
+    post<SpotRequestDto>(`/me/spot-requests/${requestId}/${action}`, token),
+  chat: (token: string, requestId: number) => request<ChatResponse>(`/me/spot-requests/${requestId}/chat`, { token }),
+  sendMessage: (token: string, requestId: number, body: string) => post<SpotMessageDto>(`/me/spot-requests/${requestId}/messages`, token, { body }),
 };

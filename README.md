@@ -7,7 +7,7 @@ Yalnızca yerelde çalışır: bilgisayar ve aynı Wi-Fi'daki telefon. Plan ve k
 |---|---|---|
 | `server/` | API, veritabanı, QR doğrulama, canlı olaylar | Node 24, Hono, SQLite (`node:sqlite`), WebSocket |
 | `web/` | Kapı ekranı (kamera ile QR okuma, geçiş kayıtları) | Vite, React, Tailwind |
-| `mobile/` | Üye uygulaması (giriş, ana sayfa, QR, antrenman, gelişim, profil) | Expo SDK 58, expo-router |
+| `mobile/` | Üye uygulaması (giriş, ana sayfa, QR, antrenman, gelişim, buddy radarı, sohbet, profil) | Expo SDK 58, expo-router |
 | `shared/` | Ortak sözleşme: API tipleri, QR kod biçimi, ret nedenleri | Bağımlılıksız TypeScript |
 
 ## Çalıştırma
@@ -46,6 +46,14 @@ Telefonsuz prova: kapı ekranındaki "Test araçları" ile kod yapıştırılabi
 2. "Antrenmana başla": uygulama hareketi, seti, önerilen kiloyu ve tekrarı gösterir. Seti yapınca "Seti tamamladım", dinlenme sayacı kendiliğinden başlar.
 3. Bitirince özet çıkar, program sonraki güne geçer. "Gelişimim" haftalık hacmi ve kilo grafiğini gösterir; "Değiştir" ile başka bir program seçilir.
 
+### Buddy radarı
+1. Önce kapıdan giriş yap: radar yalnızca salondakilere açık.
+2. "Buddy" sekmesinde spotter arayanları gör, "Spot isteği gönder". Kabul edilince "Mesajlar" açılır.
+3. Kendin de ilan açabilirsin. Kapıdan çıkınca ilan ve eşleşmeler kendiliğinden kapanır.
+
+### Demo modu
+`server\.env` içinde `DEMO_SIMULATION=true` olursa sunucu kurgu bir salon hareketi üretir: üyeler kapıdan girip çıkar (salonda en az `DEMO_MIN_INSIDE` kişi), Burak, Kerem, Caner ve Emre spotter ilanı açar, isteklere ve mesajlara birkaç saniyede cevap verir; sen ilan açarsan biri sana istek gönderir. Prova ve çekim içindir; `false` yapınca kapanır.
+
 ## Demo hesapları
 
 Yalnızca yerel örnek veritabanı içindir.
@@ -53,7 +61,7 @@ Yalnızca yerel örnek veritabanı içindir.
 | Hesap | Bilgi |
 |---|---|
 | Demo üye (Erdem Albayrak) | Telefon `5550000001`, şifre `novra2026` |
-| Diğer 119 kurgu üye | Telefon `5550000002` ile `5550000120` arası, aynı şifre |
+| Diğer 485 kurgu üye | Telefon `5550000002` ile `5550000486` arası, aynı şifre |
 | Personel: Salon Sahibi | PIN `1907` |
 | Personel: Gişe | PIN `2024` |
 
@@ -109,5 +117,5 @@ cd mobile; npx tsc --noEmit; npx expo lint
 | Kapı ekranında "Kamera bulunamadı" | Sayfayı `localhost` adresinden açın; başka bir program kamerayı kullanıyorsa kapatın. |
 | QR okunmuyor | Telefon parlaklığı QR ekranında kendiliğinden en yükseğe çıkar; telefonu kameraya 20-30 cm mesafede, düz tutun. |
 | "Kodun süresi geçmiş" | Telefon ve bilgisayar saatleri otomatik ayarlı olmalı; aradaki fark 30 saniyeyi geçmemeli. |
-| Kapı "Geçersiz kod" diyor | Telefondaki QR anahtarı eski. Profil sekmesinden "Çıkış yap", sonra tekrar giriş yap. |
+| Kapı "Geçersiz kod" diyor | Telefondaki QR anahtarı eski (örnek veri yenilenmiş). Uygulama bunu açılışta kendiliğinden düzeltir, QR ekranında kısa süre "Kapı anahtarın yenileniyor" görünür. Sürerse Profil sekmesinden "Çıkış yap", sonra tekrar giriş yap. |
 | Port kullanımda hatası | Önceki pencereleri kapatın; sunucu 3000, kapı ekranı 5173, Expo 8081 portunu kullanır. |

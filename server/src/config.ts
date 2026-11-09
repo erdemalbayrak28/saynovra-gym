@@ -6,6 +6,13 @@ const configSchema = z.object({
   DB_PATH: z.string().min(1).default('./data/novra.db'),
   GYM_CAPACITY: z.coerce.number().int().positive().default(85),
   GYM_TIMEZONE: z.string().min(1).default('Europe/Istanbul'),
+  /** Demo only: fictional members walk in and out and the scripted buddies use the radar. */
+  DEMO_SIMULATION: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /** With the simulation on, keep at least this many members inside so the radar is never empty. */
+  DEMO_MIN_INSIDE: z.coerce.number().int().min(0).max(500).default(12),
 });
 
 export type Config = z.infer<typeof configSchema>;

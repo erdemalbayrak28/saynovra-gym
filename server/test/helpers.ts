@@ -18,16 +18,26 @@ export function addPlan(db: Db, name = 'Aylık', durationDays = 30): number {
   return Number(result.lastInsertRowid);
 }
 
-export function addMember(db: Db, phone = '5550000001', passwordHash = FIXTURE_HASH): { id: number; qrSecret: string } {
+export function addMember(
+  db: Db,
+  phone = '5550000001',
+  passwordHash = FIXTURE_HASH,
+  fullName = 'Test Üye',
+): { id: number; qrSecret: string } {
   const now = new Date().toISOString();
   const qrSecret = newQrSecret();
   const result = db
     .prepare(
       `INSERT INTO members (full_name, phone, password_hash, qr_secret, created_at, modified_at)
-       VALUES ('Test Üye', ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(phone, passwordHash, qrSecret, now, now);
+    .run(fullName, phone, passwordHash, qrSecret, now, now);
   return { id: Number(result.lastInsertRowid), qrSecret };
+}
+
+/** Records a granted gate pass directly, bypassing codes. */
+export function pass(db: Db, memberId: number, direction: 'in' | 'out', at: Date): void {
+  db.prepare("INSERT INTO checkins (member_id, direction, result, created_at) VALUES (?, ?, 'granted', ?)").run(memberId, direction, at.toISOString());
 }
 
 export function addMembership(

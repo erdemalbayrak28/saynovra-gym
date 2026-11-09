@@ -67,7 +67,8 @@ Kod biçimi: `NG2.<üyeId>.<adım>.<i|o>.<sıra>.<imza>`
 - `i` giriş, `o` çıkış. Telefon üyenin içeride olup olmadığını bilir, doğru yönün kodunu gösterir.
 - `sıra` = üyenin son onaylı geçişinin kayıt numarası (hiç yoksa 0). Her geçişte değişir; böylece kullanılan kod ve ondan önceki bütün kodlar anında geçersizleşir, aynı 30 saniyede giriş, çıkış ve tekrar giriş de sorunsuz çalışır.
 - `imza = HMAC-SHA256(üyenin qr_secret'ı, "<üyeId>.<adım>.<in|out>.<sıra>")` ilk 16 onaltılık karakter.
-- Telefon kodu internetsiz üretir; anahtar giriş sırasında bir kez gelir ve güvenli depoda tutulur. Sıra numarası `/me` ve canlı olaylarla güncellenir.
+- Telefon kodu internetsiz üretir; anahtar giriş sırasında gelir ve güvenli depoda tutulur. Sıra numarası `/me` ve canlı olaylarla güncellenir.
+- Anahtar değişirse (örnek verinin yenilenmesi) oturum açık kalır ama eski anahtarla imzalanan kodlar `bad_signature` alır. Bu yüzden `/me` anahtarın parmak izini verir: `HMAC-SHA256(qr_secret, "novra:qr-key-id")` ilk 16 karakter; anahtarı açık etmez, kod imzalayamaz. Telefon kendi anahtarının parmak izi farklıysa yeni anahtarı `/me/qr-key` ile alır, o ana kadar kod göstermez.
 
 Sunucu sırayla kontrol eder, ilk başarısız adımda reddeder ve nedeni kaydeder:
 
@@ -95,8 +96,8 @@ Sunucu sırayla kontrol eder, ilk başarısız adımda reddeder ve nedeni kayded
 | Saatlik yoğunluk "tahmini" | Elle yazılmış | Son 4 haftada aynı günün saatlik ortalaması; ekranda "geçmiş 4 haftaya göre" yazar |
 | Ağırlık artışı önerisi | Sabit metin | Kural (`server/src/domain/progression.ts`): son 2 antrenmanda aynı kiloyla tüm setler tekrar aralığının tepesine ulaştı ve ortalama RPE ≤ 8 ise üst vücut +2,5 kg, alt vücut +5 kg. Bir antrenman tuttuysa "bir tane daha" der. İki antrenman üst üste aralığın altında set varsa yaklaşık %10 hafifletir. Vücut ağırlığı hareketlerinde tekrar artırır. Gerekçe metni veriden üretilir |
 | Antrenman | İşaretlenen set listesi | Kurucunun isteği: üye işaretlemez, programa göre çalışır. Hazır program kütüphanesinden seçim (5 program); uygulama sıradaki günü, hareketi, seti, kiloyu ve tekrarı söyler. Üye "Seti tamamladım"a basar, dinlenme sayacı kendiliğinden başlar, bitince titreşir ve sonraki seti açar. Farklı kilo/tekrar artı-eksiyle düzeltilir; isteğe bağlı "nasıldı?" (RPE). Yarım kalan antrenman kaldığı yerden sürer. Özet: süre, set, hacim, rekorlar. Gelişim: haftalık hacim, hareket başına en yüksek kilo grafiği |
-| Buddy / spotter radarı | Sabit liste | Yalnızca içeride olup ilan açan üyeler görünür; istek, kabul, kısa mesaj canlı. Çıkışta ilan kapanır. Tek telefonla deneme için örnek üyeler isteklere 2 sn içinde otomatik cevap verir |
-| Salon içi akış | Sabit | Eşleşme ve ilan olaylarından canlı akış |
+| Buddy / spotter radarı | Sabit liste | Radar yalnızca salondaki üyelere açık; isimler "Burak B." biçiminde. İlan (kas grubu, sabit konum listesi, 140 karakter not), istek, kabul/ret/vazgeç, eşleşince iki tarafın ilanı kapanır, kısa mesajlaşma (hazır cevaplar). Biri çıkınca ilan kapanır, eşleşme ve sohbet biter. İstek durumları tek bir durum makinesinde (`server/src/domain/spot.ts`) |
+| Salon içi akış | Sabit | Kapı ekranında ilan ve eşleşme olaylarından canlı akış |
 | AI form analizi | Animasyon | MediaPipe Pose: iskelet, dirsek/diz açısı, tekrar sayımı, hareket aralığı; laptop kamerasında |
 | İkili görünüm | Var | `web` demo sayfası: kapı + resepsiyon yan yana |
 | Resepsiyon | Yok | Üye arama, paket satışı, dondurma, iptal, günlük ciro |
@@ -140,10 +141,15 @@ active ──süre biter──► expired        active | frozen ──iptal─�
 - [x] Ağırlık önerisi kuralı + testleri, gelişim ekranı
 - [ ] Gerçek telefonda deneme (kurucu)
 
-### Sprint 3: salon zekâsı ve buddy
-- [ ] Saatlik yoğunluk, ana sayfadaki doluluk kartı
-- [ ] Spotter ilanı, istek/kabul, mesaj, otomatik cevap veren örnek üyeler
-- [ ] Salon içi canlı akış
+### Sprint 3: salon zekâsı ve buddy (bitti, 2026-11-09)
+- [x] Saatlik yoğunluk (son 4 haftada aynı gün, giriş kayıtlarından), ana sayfadaki doluluk kartı ve "kalan saatlerde en sakin" önerisi
+- [x] Spotter ilanı, istek/kabul/ret/vazgeç, eşleşme, mesajlaşma, çıkışta kapanma; Buddy sekmesi ve bildirim noktası
+- [x] Salon içi canlı akış (kapı ekranı)
+- [x] Demo modu: kurgu üyeler girip çıkar, dört buddy ilan açar ve cevap verir (aşağıda)
+- [x] Örnek veri 486 üyeye çıktı (akşam zirvesi yaklaşık %40); gelecekte başlayan üyelik hatası düzeltildi
+- [ ] Gerçek telefonda deneme (kurucu)
+
+**Demo modu** (`server/.env`: `DEMO_SIMULATION=true`, `DEMO_MIN_INSIDE=12`): yalnızca prova ve çekim içindir, varsayılan kapalıdır. Kurgu üyeler doluluğu o saatin geçmiş ortalamasına doğru götürür ve salonda en az 12 kişi tutar. Taslaktaki Burak, Kerem, Caner ve Emre spotter ilanı açar, isteklere birkaç saniyede cevap verir, sohbette birkaç kez yazar. Demo üye ilan açarsa 15 saniye sonra biri istek gönderir. Demo üyeyi hiçbir zaman hareket ettirmez. Bu kurgu davranışı yapan üyeler (5550000002-05), ikinci bir telefonla giriş yapılsa da otomatik davranmaya devam eder.
 
 ### Sprint 4: resepsiyon, AI form, demo
 - [ ] Resepsiyon: üyeler, satış, dondurma, iptal, günlük özet

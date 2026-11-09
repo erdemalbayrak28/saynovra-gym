@@ -1,26 +1,45 @@
 import { router } from 'expo-router';
-import { CalendarDays, DoorOpen, Dumbbell, Play, QrCode, Users } from 'lucide-react-native';
+import { CalendarDays, DoorOpen, Dumbbell, Play, QrCode, Radio, Users } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import type { GymStatus, MembershipSummary, MyTrainingResponse } from '../../../../shared/contract';
+import {
+  OCCUPANCY_LEVEL_TEXT,
+  type MembershipSummary,
+  type MyTrainingResponse,
+  type OccupancyResponse,
+  type RadarResponse,
+} from '../../../../shared/contract';
 import { api } from '@/lib/api';
-import { useSession } from '@/lib/session';
+import { useLiveEvent, useSession } from '@/lib/session';
 import { useResource } from '@/lib/useResource';
 import { Body, Button, Card, Initials, Label, Pill, Screen, Title } from '@/ui/components';
-import { MEMBERSHIP_STATUS_TEXT, firstName, initials, longDate } from '@/ui/format';
-import { colors, fonts, radius, space } from '@/ui/theme';
+import { MEMBERSHIP_STATUS_TEXT, firstName, hourLabel, initials, longDate } from '@/ui/format';
+import { HourlyBars } from '@/ui/HourlyBars';
+import { colors, fonts, space } from '@/ui/theme';
 
 export default function HomeScreen() {
   const { session, me, meError, refreshMe } = useSession();
   const training = useResource(api.training);
+  const occupancy = useResource(api.occupancy);
+  const radar = useResource(api.radar);
   const reloadTraining = training.reload;
+  const reloadOccupancy = occupancy.reload;
+  const reloadRadar = radar.reload;
   const [refreshing, setRefreshing] = useState(false);
+
+  useLiveEvent((event) => {
+    if (event.type === 'radar') void reloadRadar();
+    if (event.type === 'checkin') {
+      void reloadOccupancy();
+      void reloadRadar();
+    }
+  });
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshMe(), reloadTraining()]);
+    await Promise.all([refreshMe(), reloadTraining(), reloadOccupancy(), reloadRadar()]);
     setRefreshing(false);
-  }, [refreshMe, reloadTraining]);
+  }, [refreshMe, reloadTraining, reloadOccupancy, reloadRadar]);
 
   const fullName = me?.member.fullName ?? session?.member.fullName ?? '';
 
@@ -46,7 +65,8 @@ export default function HomeScreen() {
       {me && <MembershipCard membership={me.membership} />}
       {training.data && <TodayCard training={training.data} />}
       {me && <PresenceCard inside={me.isInside} />}
-      {me && <OccupancyCard gym={me.gym} />}
+      {radar.data?.inside && <BuddyPreview radar={radar.data} />}
+      {occupancy.data && <OccupancyCard occupancy={occupancy.data} />}
     </Screen>
   );
 }
@@ -136,9 +156,40 @@ function PresenceCard({ inside }: { inside: boolean }) {
   );
 }
 
-function OccupancyCard({ gym }: { gym: GymStatus }) {
-  const percent = Math.min(100, Math.round((gym.insideCount / gym.capacity) * 100));
-  const level = percent < 40 ? { text: 'Sakin', color: colors.ok } : percent < 70 ? { text: 'Normal', color: colors.info } : { text: 'Yoğun', color: colors.bad };
+function BuddyPreview({ radar }: { radar: RadarResponse }) {
+  const count = radar.posts.length;
+  const first = radar.posts.slice(0, 2);
+  return (
+    <Card style={{ borderColor: 'rgba(77,184,255,0.4)' }}>
+      <View style={styles.rowBetween}>
+        <View style={styles.inline}>
+          <Radio size={16} color={colors.info} />
+          <Label style={{ color: colors.info }}>{'Salondaki buddy’ler'}</Label>
+        </View>
+        <Pill text={`${count} kişi`} color={colors.ok} background={colors.okSoft} />
+      </View>
+      {count === 0 ? (
+        <Body>Şu an spotter arayan yok. İlan açarak sen arayabilirsin.</Body>
+      ) : (
+        first.map((post) => (
+          <View key={post.id} style={styles.inline}>
+            <Initials text={post.member.initials} size={34} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.presenceText} numberOfLines={1}>{`${post.member.displayName} · ${post.location}`}</Text>
+              <Body numberOfLines={1}>{post.note || 'Spotter arıyor'}</Body>
+            </View>
+          </View>
+        ))
+      )}
+      <Button title="Radarı aç" variant="ghost" onPress={() => router.navigate('/buddy')} icon={<Users size={18} color={colors.text} />} />
+    </Card>
+  );
+}
+
+const LEVEL_COLOR = { calm: colors.ok, normal: colors.info, busy: colors.bad } as const;
+
+function OccupancyCard({ occupancy }: { occupancy: OccupancyResponse }) {
+  const quiet = occupancy.quietestUpcoming;
   return (
     <Card>
       <View style={styles.rowBetween}>
@@ -146,15 +197,17 @@ function OccupancyCard({ gym }: { gym: GymStatus }) {
           <Users size={16} color={colors.lime} />
           <Label style={{ color: colors.text }}>Canlı doluluk</Label>
         </View>
-        <Text style={[styles.levelText, { color: level.color }]}>{level.text}</Text>
+        <Text style={[styles.levelText, { color: LEVEL_COLOR[occupancy.level] }]}>{OCCUPANCY_LEVEL_TEXT[occupancy.level]}</Text>
       </View>
       <View style={styles.daysRow}>
-        <Text style={styles.occupancyNumber}>{gym.insideCount}</Text>
-        <Body style={{ marginBottom: 6 }}>{`/ ${gym.capacity} kişi · %${percent}`}</Body>
+        <Text style={styles.occupancyNumber}>{occupancy.insideCount}</Text>
+        <Body style={{ marginBottom: 6 }}>{`/ ${occupancy.capacity} kişi · %${occupancy.pct}`}</Body>
       </View>
-      <View style={styles.track}>
-        <View style={[styles.fill, { width: `${percent}%`, backgroundColor: level.color }]} />
-      </View>
+      <HourlyBars hours={occupancy.hours} currentHour={occupancy.currentHour} />
+      <Body>
+        {`Çubuklar son 4 haftanın ${occupancy.weekdayName.toLocaleLowerCase('tr-TR')} günlerindeki ortalama doluluk.`}
+        {quiet ? ` Bugün kalan saatlerde en sakin: ${hourLabel(quiet.hour)} (%${quiet.pct}).` : ''}
+      </Body>
     </Card>
   );
 }
@@ -170,6 +223,4 @@ const styles = StyleSheet.create({
   occupancyNumber: { fontFamily: fonts.display, fontSize: 36, lineHeight: 40, color: colors.text },
   presenceText: { fontFamily: fonts.bodySemi, fontSize: 16 },
   levelText: { fontFamily: fonts.bodySemi, fontSize: 13 },
-  track: { height: 8, borderRadius: radius.sm, backgroundColor: colors.surface2, overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: radius.sm },
 });

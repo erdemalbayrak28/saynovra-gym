@@ -10,12 +10,13 @@ import {
   createGateCode,
   gateStep,
   msUntilNextStep,
+  qrKeyId,
   type CheckinDto,
   type GateDirection,
 } from '../../../../shared/contract';
 import { gateSigner } from '@/lib/gate';
 import { useSession } from '@/lib/session';
-import { Body, Card, Label, Screen, Title } from '@/ui/components';
+import { Body, Button, Card, Label, Screen, Title } from '@/ui/components';
 import { firstName } from '@/ui/format';
 import { colors, fonts, radius, space } from '@/ui/theme';
 
@@ -25,8 +26,9 @@ const BANNER_MS = 3500;
 const QR_SIZE = 236;
 
 export default function QrScreen() {
-  const { session, me, lastCheckin, liveConnected } = useSession();
+  const { session, me, lastCheckin, liveConnected, refreshMe } = useSession();
   const [now, setNow] = useState(() => Date.now());
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), TICK_MS);
@@ -41,13 +43,20 @@ export default function QrScreen() {
   const seq = me?.presenceSeq ?? null;
   const step = gateStep(now);
   const signer = useMemo(() => (session ? gateSigner(session.qrSecret) : null), [session]);
+  const keyId = useMemo(() => (signer ? qrKeyId(signer) : null), [signer]);
+  // The session fetches a changed key by itself; until then a code would only be refused.
+  const keyCurrent = !me || keyId === me.qrKeyId;
   const code = useMemo(
     () =>
-      session && signer && seq !== null
+      session && signer && seq !== null && keyCurrent
         ? createGateCode(session.member.id, direction, seq, step * GATE_STEP_SECONDS * 1000, signer)
         : null,
-    [session, signer, direction, seq, step],
+    [session, signer, direction, seq, step, keyCurrent],
   );
+  const retry = () => {
+    setRetrying(true);
+    refreshMe().finally(() => setRetrying(false));
+  };
   const secondsLeft = Math.ceil(msUntilNextStep(now) / 1000);
   const name = me?.member.fullName ?? session?.member.fullName ?? '';
 
@@ -79,8 +88,16 @@ export default function QrScreen() {
         </View>
 
         <View style={styles.qrFrame}>
-          {code ? <QRCode value={code} size={QR_SIZE} color={colors.ink} backgroundColor="#FFFFFF" quietZone={12} ecl="M" /> : null}
+          {keyCurrent ? (
+            code ? <QRCode value={code} size={QR_SIZE} color={colors.ink} backgroundColor="#FFFFFF" quietZone={12} ecl="M" /> : null
+          ) : (
+            <View style={styles.keyNotice}>
+              <Text style={styles.keyNoticeTitle}>Kapı anahtarın yenileniyor</Text>
+              <Text style={styles.keyNoticeBody}>Salonun kayıtları değişmiş. Yeni anahtar gelince kod burada belirir.</Text>
+            </View>
+          )}
         </View>
+        {keyCurrent ? null : <Button title="Yeniden dene" variant="ghost" loading={retrying} onPress={retry} />}
 
         <View style={styles.rowBetween}>
           <View style={styles.inline}>
@@ -152,6 +169,9 @@ const styles = StyleSheet.create({
   inline: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 1 },
   name: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.text },
   qrFrame: { alignSelf: 'center', borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#FFFFFF', padding: 4 },
+  keyNotice: { width: QR_SIZE + 24, height: QR_SIZE + 24, alignItems: 'center', justifyContent: 'center', gap: space.sm, padding: space.lg },
+  keyNoticeTitle: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink, textAlign: 'center' },
+  keyNoticeBody: { fontFamily: fonts.body, fontSize: 13, color: colors.ink, textAlign: 'center', opacity: 0.7 },
   countdown: { fontFamily: fonts.mono, fontSize: 15, color: colors.lime },
   track: { height: 6, borderRadius: 3, backgroundColor: colors.ink, overflow: 'hidden' },
   fill: { height: '100%', backgroundColor: colors.lime },

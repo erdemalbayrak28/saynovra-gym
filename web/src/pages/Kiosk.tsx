@@ -1,7 +1,8 @@
 import { ChevronDown, LogOut, Users } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { GATE_CODE_PREFIX, gateStep, type CheckinDto, type LiveEvent, type StaffSummary } from '../../../shared/contract';
+import { GATE_CODE_PREFIX, gateStep, type CheckinDto, type FloorEvent, type LiveEvent, type StaffSummary } from '../../../shared/contract';
 import { AccessLog } from '../components/AccessLog';
+import { FloorFeed } from '../components/FloorFeed';
 import { GateStatus, type GateView } from '../components/GateStatus';
 import { QrScanner } from '../components/QrScanner';
 import { Card, Label, Wordmark } from '../components/ui';
@@ -15,6 +16,7 @@ const RESULT_HOLD_MS = 3400;
 /** A phone held at the camera is decoded many times per second; the same text is sent once. */
 const SAME_CODE_COOLDOWN_MS = 5000;
 const LOG_LIMIT = 30;
+const FLOOR_LIMIT = 5;
 
 interface Props {
   session: StaffSession;
@@ -26,6 +28,7 @@ export function Kiosk({ session, onLogout }: Props) {
   const [view, setView] = useState<GateView>({ kind: 'idle' });
   const [checkins, setCheckins] = useState<CheckinDto[]>([]);
   const [summary, setSummary] = useState<StaffSummary | null>(null);
+  const [floor, setFloor] = useState<FloorEvent[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const lastCode = useRef<{ text: string; at: number } | null>(null);
   const resetTimer = useRef<number | undefined>(undefined);
@@ -45,12 +48,18 @@ export function Kiosk({ session, onLogout }: Props) {
 
   useEffect(() => {
     api.checkins(token, LOG_LIMIT).then(setCheckins, (err: unknown) => setLoadError(fail(err)));
+    api.floor(token).then((events) => setFloor(events.slice(0, FLOOR_LIMIT)), (err: unknown) => setLoadError(fail(err)));
     refreshSummary();
     return () => window.clearTimeout(resetTimer.current);
   }, [token, refreshSummary, fail]);
 
   const onLive = useCallback(
     (event: LiveEvent) => {
+      if (event.type === 'floor') {
+        setFloor((current) => [event.event, ...current.filter((e) => e.id !== event.event.id)].slice(0, FLOOR_LIMIT));
+        return;
+      }
+      if (event.type !== 'checkin') return;
       setCheckins((current) => [event.checkin, ...current.filter((c) => c.id !== event.checkin.id)].slice(0, LOG_LIMIT));
       setSummary((current) => (current ? { ...current, gym: event.gym } : current));
       refreshSummary();
@@ -135,6 +144,8 @@ export function Kiosk({ session, onLogout }: Props) {
             <Stat label="Bugün giriş" value={summary ? `${summary.todayGranted}` : '-'} />
             <Stat label="Bugün ret" value={summary ? `${summary.todayDenied}` : '-'} tone="bad" />
           </div>
+
+          <FloorFeed events={floor} />
 
           <div>
             <div className="mb-3 flex items-center justify-between">

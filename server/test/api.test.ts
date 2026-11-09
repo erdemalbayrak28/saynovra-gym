@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { createGateCode, type GateScanResponse, type MeResponse, type MemberLoginResponse } from '../../shared/contract.ts';
+import {
+  createGateCode,
+  qrKeyId,
+  type GateScanResponse,
+  type MeResponse,
+  type MemberLoginResponse,
+  type QrKeyResponse,
+} from '../../shared/contract.ts';
 import { createApp } from '../src/app.ts';
-import { gateSigner, hashSecret } from '../src/auth.ts';
+import { gateSigner, hashSecret, newQrSecret } from '../src/auth.ts';
 import type { Config } from '../src/config.ts';
 import { LiveHub } from '../src/live.ts';
 import { TZ, addMember, addMembership, addPlan, testDb } from './helpers.ts';
@@ -13,6 +20,8 @@ const config: Config = {
   DB_PATH: ':memory:',
   GYM_CAPACITY: 85,
   GYM_TIMEZONE: TZ,
+  DEMO_SIMULATION: false,
+  DEMO_MIN_INSIDE: 12,
 };
 const NOW = new Date('2026-11-09T17:30:10Z');
 
@@ -78,6 +87,41 @@ describe('HTTP API', () => {
     const after = (await (await app.request('/me', asMember)).json()) as MeResponse;
     assert.equal(after.isInside, true);
     assert.equal(after.presenceSeq, scan.checkin.id);
+  });
+
+  it('lets a phone with an out-of-date gate key notice it and fetch the new one', async () => {
+    const login = await app.request('/auth/member/login', json({ phone: '5550000001', password: 'demo-password' }));
+    const session = (await login.json()) as MemberLoginResponse;
+    const asMember = { headers: { Authorization: `Bearer ${session.token}` } };
+    const staffLogin = await app.request('/auth/staff/login', json({ pin: '2024' }));
+    const { token: staffToken } = (await staffLogin.json()) as { token: string };
+    const scan = async (secret: string) => {
+      const me = (await (await app.request('/me', asMember)).json()) as MeResponse;
+      const code = createGateCode(memberId, me.isInside ? 'out' : 'in', me.presenceSeq, NOW.getTime(), gateSigner(secret));
+      const res = await app.request('/gate/scan', {
+        ...json({ code }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${staffToken}` },
+      });
+      return ((await res.json()) as GateScanResponse).checkin;
+    };
+
+    const fresh = (await (await app.request('/me', asMember)).json()) as MeResponse;
+    assert.equal(fresh.qrKeyId, qrKeyId(gateSigner(session.qrSecret)));
+
+    // The demo database is reset under a signed-in phone: same member, new key.
+    db.prepare('UPDATE members SET qr_secret = ? WHERE id = ?').run(newQrSecret(), memberId);
+    assert.equal((await scan(session.qrSecret)).reason, 'bad_signature');
+
+    const stale = (await (await app.request('/me', asMember)).json()) as MeResponse;
+    assert.notEqual(stale.qrKeyId, qrKeyId(gateSigner(session.qrSecret)));
+    const keyRes = await app.request('/me/qr-key', asMember);
+    assert.equal(keyRes.headers.get('Cache-Control'), 'no-store');
+    const key = (await keyRes.json()) as QrKeyResponse;
+    assert.equal(key.qrKeyId, stale.qrKeyId);
+    assert.equal(qrKeyId(gateSigner(key.qrSecret)), stale.qrKeyId);
+    assert.equal((await scan(key.qrSecret)).result, 'granted');
+
+    assert.equal((await app.request('/me/qr-key')).status, 401);
   });
 
   it('keeps members away from staff endpoints and strangers away from everything', async () => {

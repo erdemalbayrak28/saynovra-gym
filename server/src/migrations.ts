@@ -185,4 +185,41 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX idx_workout_sets_exercise ON workout_sets(exercise_id, workout_id);
   `,
+
+  // 3: buddy radar (spotter posts, requests, short chats between matched members)
+  `
+  CREATE TABLE spotter_posts (
+    id           INTEGER PRIMARY KEY,
+    member_id    INTEGER NOT NULL REFERENCES members(id),
+    muscle_group TEXT NOT NULL CHECK (muscle_group IN ('chest_back', 'shoulders_arms', 'legs', 'full_body')),
+    location     TEXT NOT NULL CHECK (length(location) BETWEEN 2 AND 40),
+    note         TEXT NOT NULL CHECK (length(note) <= 140),
+    created_at   TEXT NOT NULL,
+    closed_at    TEXT
+  );
+  -- One open post per member.
+  CREATE UNIQUE INDEX idx_spotter_posts_open ON spotter_posts(member_id) WHERE closed_at IS NULL;
+  CREATE INDEX idx_spotter_posts_created ON spotter_posts(created_at);
+
+  CREATE TABLE spot_requests (
+    id             INTEGER PRIMARY KEY,
+    post_id        INTEGER NOT NULL REFERENCES spotter_posts(id),
+    from_member_id INTEGER NOT NULL REFERENCES members(id),
+    status         TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'declined', 'cancelled', 'expired')),
+    created_at     TEXT NOT NULL,
+    modified_at    TEXT NOT NULL
+  );
+  -- A member asks a post at most once while the request is live.
+  CREATE UNIQUE INDEX idx_spot_requests_live ON spot_requests(post_id, from_member_id) WHERE status IN ('pending', 'accepted');
+  CREATE INDEX idx_spot_requests_from ON spot_requests(from_member_id, status);
+
+  CREATE TABLE spot_messages (
+    id               INTEGER PRIMARY KEY,
+    request_id       INTEGER NOT NULL REFERENCES spot_requests(id),
+    sender_member_id INTEGER NOT NULL REFERENCES members(id),
+    body             TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 280),
+    created_at       TEXT NOT NULL
+  );
+  CREATE INDEX idx_spot_messages_request ON spot_messages(request_id, id);
+  `,
 ];

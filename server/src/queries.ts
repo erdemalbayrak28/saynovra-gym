@@ -140,18 +140,22 @@ export function isInside(db: Db, memberId: number, now: Date): boolean {
   return last?.direction === 'in' && last.created_at > hoursAgo(now, INSIDE_TIMEOUT_HOURS);
 }
 
+// SQLite returns the bare `direction` from the row that holds MAX(created_at).
+const INSIDE_SQL = `
+  SELECT member_id FROM (
+    SELECT member_id, direction, MAX(created_at) AS at FROM checkins
+    WHERE result = 'granted' AND created_at > ?
+    GROUP BY member_id
+  ) WHERE direction = 'in'`;
+
 export function insideCount(db: Db, now: Date): number {
-  // SQLite returns the bare `direction` from the row that holds MAX(created_at).
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM (
-         SELECT member_id, direction, MAX(created_at) AS at FROM checkins
-         WHERE result = 'granted' AND created_at > ?
-         GROUP BY member_id
-       ) WHERE direction = 'in'`,
-    )
-    .get(hoursAgo(now, INSIDE_TIMEOUT_HOURS)) as { n: number };
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM (${INSIDE_SQL})`).get(hoursAgo(now, INSIDE_TIMEOUT_HOURS)) as { n: number };
   return row.n;
+}
+
+export function insideMemberIds(db: Db, now: Date): Set<number> {
+  const rows = db.prepare(INSIDE_SQL).all(hoursAgo(now, INSIDE_TIMEOUT_HOURS)) as unknown as { member_id: number }[];
+  return new Set(rows.map((row) => row.member_id));
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { LIVE_URL } from './config';
 export type LiveState = 'connecting' | 'open' | 'offline';
 
 const MAX_BACKOFF_MS = 10_000;
+const KNOWN_TYPES = new Set<LiveEvent['type']>(['checkin', 'radar', 'spot_request', 'spot_message', 'floor']);
 
 /** Subscribes to /live and reconnects with exponential backoff until unmounted. */
 export function useLive(token: string, onEvent: (event: LiveEvent) => void): LiveState {
@@ -35,7 +36,7 @@ export function useLive(token: string, onEvent: (event: LiveEvent) => void): Liv
         } catch {
           return;
         }
-        if (event && typeof event === 'object' && event.type === 'checkin') handler.current(event);
+        if (event && typeof event === 'object' && KNOWN_TYPES.has(event.type)) handler.current(event);
       };
       socket.onclose = () => {
         if (stopped) return;

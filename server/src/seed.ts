@@ -27,7 +27,7 @@ const PERSONAS: { name: string; plan: PlanName; daysLeft: number; visitsPerWeek:
   { name: 'Emre Kaya', plan: '3 Aylık', daysLeft: 37, visitsPerWeek: 3 },
   { name: 'Mert Demir', plan: 'Aylık', daysLeft: -1, visitsPerWeek: 3 },
 ];
-const GENERATED_MEMBERS = 114;
+const GENERATED_MEMBERS = 480;
 
 const FIRST_NAMES = [
   'Ahmet', 'Ayşe', 'Mehmet', 'Zeynep', 'Can', 'Elif', 'Cem', 'Selin', 'Deniz', 'Ece', 'Kaan', 'Gizem',
@@ -159,8 +159,10 @@ async function main(): Promise<void> {
       });
       const roll = random();
       const status = roll < 0.04 ? 'cancelled' : roll < 0.1 ? 'frozen' : 'active';
-      const daysLeft = random() < 0.08 ? -Math.ceil(random() * 20) : Math.ceil(random() * 300);
-      addMembership(id, pick(PLANS).name, daysLeft, status, 2 + Math.floor(random() * 4));
+      const plan = pick(PLANS);
+      // Days left can never exceed the plan's length, or the membership would start in the future.
+      const daysLeft = random() < 0.08 ? -Math.ceil(random() * 20) : Math.ceil(random() * plan.days);
+      addMembership(id, plan.name, daysLeft, status, 2 + Math.floor(random() * 4));
     }
 
     const programIds = seedCatalog(db, now);

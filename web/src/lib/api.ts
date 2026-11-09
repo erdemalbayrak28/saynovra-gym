@@ -1,5 +1,6 @@
 import type {
   CheckinDto,
+  FloorEvent,
   GateScanResponse,
   Problem,
   StaffLoginResponse,
@@ -51,4 +52,5 @@ export const api = {
   scan: (token: string, code: string) => request<GateScanResponse>('/gate/scan', { method: 'POST', body: { code }, token }),
   checkins: (token: string, limit = 30) => request<CheckinDto[]>(`/staff/checkins?limit=${limit}`, { token }),
   summary: (token: string) => request<StaffSummary>('/staff/summary', { token }),
+  floor: (token: string) => request<FloorEvent[]>('/staff/floor', { token }),
 };
