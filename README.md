@@ -7,7 +7,7 @@ Yalnızca yerelde çalışır: bilgisayar ve aynı Wi-Fi'daki telefon. Plan ve k
 |---|---|---|
 | `server/` | API, veritabanı, QR doğrulama, canlı olaylar | Node 24, Hono, SQLite (`node:sqlite`), WebSocket |
 | `web/` | Kapı ekranı (kamera ile QR okuma, geçiş kayıtları) | Vite, React, Tailwind |
-| `mobile/` | Üye uygulaması (giriş, ana sayfa, QR, profil) | Expo SDK 58, expo-router |
+| `mobile/` | Üye uygulaması (giriş, ana sayfa, QR, antrenman, gelişim, profil) | Expo SDK 58, expo-router |
 | `shared/` | Ortak sözleşme: API tipleri, QR kod biçimi, ret nedenleri | Bağımlılıksız TypeScript |
 
 ## Çalıştırma
@@ -40,6 +40,11 @@ cd mobile; npx expo start
 3. Kapı ekranı yeşil yanar, telefonda "Kapı açıldı" kartı çıkar, kayıt listeye düşer. Telefon bundan sonra çıkış kodunu gösterir.
 
 Telefonsuz prova: kapı ekranındaki "Test araçları" ile kod yapıştırılabilir veya sahte imzalı kod denenebilir.
+
+### Antrenman
+1. Telefonda "Antrenman" sekmesi: demo üye "Hipertrofi: Üst / Alt" programında, 4 haftalık geçmişi var.
+2. "Antrenmana başla": uygulama hareketi, seti, önerilen kiloyu ve tekrarı gösterir. Seti yapınca "Seti tamamladım", dinlenme sayacı kendiliğinden başlar.
+3. Bitirince özet çıkar, program sonraki güne geçer. "Gelişimim" haftalık hacmi ve kilo grafiğini gösterir; "Değiştir" ile başka bir program seçilir.
 
 ## Demo hesapları
 
@@ -104,4 +109,5 @@ cd mobile; npx tsc --noEmit; npx expo lint
 | Kapı ekranında "Kamera bulunamadı" | Sayfayı `localhost` adresinden açın; başka bir program kamerayı kullanıyorsa kapatın. |
 | QR okunmuyor | Telefon parlaklığı QR ekranında kendiliğinden en yükseğe çıkar; telefonu kameraya 20-30 cm mesafede, düz tutun. |
 | "Kodun süresi geçmiş" | Telefon ve bilgisayar saatleri otomatik ayarlı olmalı; aradaki fark 30 saniyeyi geçmemeli. |
+| Kapı "Geçersiz kod" diyor | Telefondaki QR anahtarı eski. Profil sekmesinden "Çıkış yap", sonra tekrar giriş yap. |
 | Port kullanımda hatası | Önceki pencereleri kapatın; sunucu 3000, kapı ekranı 5173, Expo 8081 portunu kullanır. |

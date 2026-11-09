@@ -61,12 +61,13 @@ Gerçek ürüne geçişte değişecekler: SQLite yerine PostgreSQL, sunucunun in
 
 ## 3. Kapı geçişi (QR)
 
-Kod biçimi: `NG1.<üyeId>.<adım>.<i|o>.<imza>`
+Kod biçimi: `NG2.<üyeId>.<adım>.<i|o>.<sıra>.<imza>`
 
 - `adım = floor(unix_saniye / 30)`; kod 30 saniyede bir değişir.
 - `i` giriş, `o` çıkış. Telefon üyenin içeride olup olmadığını bilir, doğru yönün kodunu gösterir.
-- `imza = HMAC-SHA256(üyenin qr_secret'ı, "<üyeId>.<adım>.<in|out>")` ilk 16 onaltılık karakter.
-- Telefon kodu internetsiz üretir; anahtar giriş sırasında bir kez gelir ve güvenli depoda tutulur.
+- `sıra` = üyenin son onaylı geçişinin kayıt numarası (hiç yoksa 0). Her geçişte değişir; böylece kullanılan kod ve ondan önceki bütün kodlar anında geçersizleşir, aynı 30 saniyede giriş, çıkış ve tekrar giriş de sorunsuz çalışır.
+- `imza = HMAC-SHA256(üyenin qr_secret'ı, "<üyeId>.<adım>.<in|out>.<sıra>")` ilk 16 onaltılık karakter.
+- Telefon kodu internetsiz üretir; anahtar giriş sırasında bir kez gelir ve güvenli depoda tutulur. Sıra numarası `/me` ve canlı olaylarla güncellenir.
 
 Sunucu sırayla kontrol eder, ilk başarısız adımda reddeder ve nedeni kaydeder:
 
@@ -76,7 +77,7 @@ Sunucu sırayla kontrol eder, ilk başarısız adımda reddeder ve nedeni kayded
 | 2 | Üye var mı | `unknown_member` |
 | 3 | İmza (sabit zamanlı karşılaştırma) | `bad_signature` |
 | 4 | Adım ±1 içinde mi (en çok 90 sn) | `expired_code` |
-| 5 | Aynı kod aynı yönde kullanıldı mı | `replayed` |
+| 5 | Kodun sıra numarası güncel mi (ekran görüntüsü, kullanılmış kod) | `stale_code` |
 | 6 | Üyelik durumu | `no_membership`, `membership_frozen`, `membership_expired`, `membership_cancelled` |
 | 7 | Anti-passback | `already_inside` (içerideyken giriş), `not_inside` (dışarıdayken çıkış) |
 
@@ -92,8 +93,8 @@ Sunucu sırayla kontrol eder, ilk başarısız adımda reddeder ve nedeni kayded
 | Turnike | Buton simülasyonu | Laptop kamerası QR'ı okur, tam ekran onay/ret |
 | Canlı doluluk | Sabit sayı | İçerideki üye sayısı / kapasite (85) |
 | Saatlik yoğunluk "tahmini" | Elle yazılmış | Son 4 haftada aynı günün saatlik ortalaması; ekranda "geçmiş 4 haftaya göre" yazar |
-| Ağırlık artışı önerisi | Sabit metin | Kural: son 2 antrenmanda tüm setler hedef tekrara ulaştı ve RPE ≤ 8 ise üst vücut +2,5 kg, alt vücut +5 kg. İki antrenman üst üste hedefin altında kaldıysa %10 hafifletme önerisi. Gerekçe metni veriden üretilir |
-| Antrenman | Kaydetmiyor | Program, set/tekrar/kilo/RPE kaydı, 90 sn dinlenme sayacı, hacim, gelişim grafiği |
+| Ağırlık artışı önerisi | Sabit metin | Kural (`server/src/domain/progression.ts`): son 2 antrenmanda aynı kiloyla tüm setler tekrar aralığının tepesine ulaştı ve ortalama RPE ≤ 8 ise üst vücut +2,5 kg, alt vücut +5 kg. Bir antrenman tuttuysa "bir tane daha" der. İki antrenman üst üste aralığın altında set varsa yaklaşık %10 hafifletir. Vücut ağırlığı hareketlerinde tekrar artırır. Gerekçe metni veriden üretilir |
+| Antrenman | İşaretlenen set listesi | Kurucunun isteği: üye işaretlemez, programa göre çalışır. Hazır program kütüphanesinden seçim (5 program); uygulama sıradaki günü, hareketi, seti, kiloyu ve tekrarı söyler. Üye "Seti tamamladım"a basar, dinlenme sayacı kendiliğinden başlar, bitince titreşir ve sonraki seti açar. Farklı kilo/tekrar artı-eksiyle düzeltilir; isteğe bağlı "nasıldı?" (RPE). Yarım kalan antrenman kaldığı yerden sürer. Özet: süre, set, hacim, rekorlar. Gelişim: haftalık hacim, hareket başına en yüksek kilo grafiği |
 | Buddy / spotter radarı | Sabit liste | Yalnızca içeride olup ilan açan üyeler görünür; istek, kabul, kısa mesaj canlı. Çıkışta ilan kapanır. Tek telefonla deneme için örnek üyeler isteklere 2 sn içinde otomatik cevap verir |
 | Salon içi akış | Sabit | Eşleşme ve ilan olaylarından canlı akış |
 | AI form analizi | Animasyon | MediaPipe Pose: iskelet, dirsek/diz açısı, tekrar sayımı, hareket aralığı; laptop kamerasında |
@@ -109,7 +110,7 @@ Zamanlar UTC ISO 8601 metin. Üyelik tarihleri İstanbul takvim günü (`YYYY-MM
 | Göç | Tablolar |
 |---|---|
 | 1 (sprint 1) | `staff`, `members`, `plans`, `memberships`, `payments`, `checkins`, `gate_code_uses` |
-| 2 (sprint 2) | `exercises`, `programs`, `program_days`, `program_items`, `workouts`, `workout_sets` |
+| 2 (sprint 2) | `exercises`, `programs`, `program_days`, `program_items`, `member_programs` (üye başına tek aktif program), `workouts` (üye başına tek aktif antrenman), `workout_sets`; `gate_code_uses` kaldırıldı (yerini sıra numarası aldı) |
 | 3 (sprint 3) | `spotter_posts`, `spot_requests`, `spot_messages` |
 
 Üyelik durum makinesi (tek fonksiyon, izin tablosu):
@@ -123,19 +124,21 @@ active ──süre biter──► expired        active | frozen ──iptal─�
 
 ## 6. Sprintler
 
-### Sprint 1: kapı
-- [ ] `shared/contract.ts`, sunucu iskeleti, ayar doğrulama, hata biçimi
-- [ ] Göç 1, örnek veri (40 kurgu üye, 4 paket, son 28 günün girişleri)
-- [ ] Üye ve personel girişi (JWT)
-- [ ] QR kod üretme/doğrulama, kapı kuralları, `/live`
-- [ ] Web: PIN girişi, kapı ekranı (kamera + elle kod), canlı geçiş kayıtları, doluluk
-- [ ] Mobil: giriş, ana sayfa (üyelik kartı, içeride/dışarıda, doluluk), QR ekranı, profil
-- **Bitti ölçütü:** Telefondaki QR laptop kamerasına tutulunca yeşil ekran; telefonda "Kapı açıldı"; aynı kodun ekran görüntüsü 90 sn sonra reddediliyor; `npm test` yeşil.
+### Sprint 1: kapı (bitti, 2026-11-09)
+- [x] `shared/contract.ts`, sunucu iskeleti, ayar doğrulama, hata biçimi
+- [x] Göç 1, örnek veri (120 kurgu üye, 4 paket, son 28 günün girişleri)
+- [x] Üye ve personel girişi (JWT)
+- [x] QR kod üretme/doğrulama, kapı kuralları, `/live`
+- [x] Web: PIN girişi, kapı ekranı (kamera + elle kod), canlı geçiş kayıtları, doluluk
+- [x] Mobil: giriş, ana sayfa (üyelik kartı, içeride/dışarıda, doluluk), QR ekranı, profil
+- **Bitti ölçütü:** Gerçek Android telefonla doğrulandı.
 
-### Sprint 2: antrenman
-- [ ] Göç 2, 60 hareketlik kütüphane, demo üyeye 4 haftalık geçmiş
-- [ ] Program oluşturma, antrenman ekranı (taslaktaki set tablosu), dinlenme sayacı
-- [ ] Ağırlık önerisi kuralı + testleri, gelişim grafiği
+### Sprint 2: antrenman (bitti, 2026-11-09)
+- [x] QR: sıra numaralı kod (NG2), tekrar kullanım tablosu kaldırıldı
+- [x] Göç 2, 29 hareket ve 5 programlık kütüphane, demo üyeye 4 haftalık geçmiş (her öneri türü görünsün diye kurgulandı)
+- [x] Program seçimi ve değiştirme, yönlendirmeli antrenman (durum makinesi `mobile/src/lib/workout-flow.ts`), dinlenme sayacı, devam etme, özet
+- [x] Ağırlık önerisi kuralı + testleri, gelişim ekranı
+- [ ] Gerçek telefonda deneme (kurucu)
 
 ### Sprint 3: salon zekâsı ve buddy
 - [ ] Saatlik yoğunluk, ana sayfadaki doluluk kartı
@@ -151,4 +154,4 @@ active ──süre biter──► expired        active | frozen ──iptal─�
 
 ## 7. Kapsam dışı
 
-Gerçek ödeme, mağaza yayını, sunucudan push bildirimi, grup dersi rezervasyonu, eğitmen hesabı, çoklu şube, internete açık sunucu, telefonda form analizi.
+Gerçek ödeme, mağaza yayını, sunucudan push bildirimi, grup dersi rezervasyonu, eğitmen hesabı, çoklu şube, internete açık sunucu, telefonda form analizi, üyenin kendi programını sıfırdan kurması (kurucu hazır program seçimini istedi; eğitmenin üyeye program ataması sonraki aşamada).

@@ -114,14 +114,25 @@ export function currentMembership(db: Db, memberId: number, today: string): Memb
 // Presence
 // ---------------------------------------------------------------------------
 
-export function lastGrantedCheckin(db: Db, memberId: number): { direction: GateDirection; created_at: string } | undefined {
+export interface GrantedCheckin {
+  id: number;
+  direction: GateDirection;
+  created_at: string;
+}
+
+export function lastGrantedCheckin(db: Db, memberId: number): GrantedCheckin | undefined {
   return db
     .prepare(
-      `SELECT direction, created_at FROM checkins
+      `SELECT id, direction, created_at FROM checkins
        WHERE member_id = ? AND result = 'granted'
        ORDER BY created_at DESC, id DESC LIMIT 1`,
     )
-    .get(memberId) as { direction: GateDirection; created_at: string } | undefined;
+    .get(memberId) as GrantedCheckin | undefined;
+}
+
+/** The gate-code sequence: id of the last granted pass, 0 before the first one. */
+export function presenceSeq(db: Db, memberId: number): number {
+  return lastGrantedCheckin(db, memberId)?.id ?? 0;
 }
 
 export function isInside(db: Db, memberId: number, now: Date): boolean {

@@ -91,4 +91,98 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (member_id, step, direction)
   );
   `,
+
+  // 2: training (program library, enrolments, guided workouts). Gate codes now carry the presence
+  // sequence, which makes the replay table redundant.
+  `
+  DROP TABLE gate_code_uses;
+
+  CREATE TABLE exercises (
+    id            INTEGER PRIMARY KEY,
+    slug          TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL,
+    muscle_group  TEXT NOT NULL,
+    equipment     TEXT NOT NULL,
+    is_lower_body INTEGER NOT NULL CHECK (is_lower_body IN (0, 1)),
+    is_bodyweight INTEGER NOT NULL CHECK (is_bodyweight IN (0, 1)),
+    cue           TEXT NOT NULL
+  );
+
+  CREATE TABLE programs (
+    id            INTEGER PRIMARY KEY,
+    slug          TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL,
+    goal          TEXT NOT NULL CHECK (goal IN ('beginner', 'hypertrophy', 'strength', 'fat_loss')),
+    level         TEXT NOT NULL CHECK (level IN ('beginner', 'intermediate', 'advanced')),
+    days_per_week INTEGER NOT NULL CHECK (days_per_week BETWEEN 1 AND 7),
+    weeks         INTEGER NOT NULL CHECK (weeks BETWEEN 1 AND 52),
+    description   TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    modified_at   TEXT NOT NULL
+  );
+
+  CREATE TABLE program_days (
+    id         INTEGER PRIMARY KEY,
+    program_id INTEGER NOT NULL REFERENCES programs(id),
+    day_index  INTEGER NOT NULL CHECK (day_index >= 1),
+    name       TEXT NOT NULL,
+    focus      TEXT NOT NULL,
+    UNIQUE (program_id, day_index)
+  );
+
+  CREATE TABLE program_items (
+    id              INTEGER PRIMARY KEY,
+    program_day_id  INTEGER NOT NULL REFERENCES program_days(id),
+    exercise_id     INTEGER NOT NULL REFERENCES exercises(id),
+    sort_order      INTEGER NOT NULL,
+    target_sets     INTEGER NOT NULL CHECK (target_sets BETWEEN 1 AND 10),
+    rep_min         INTEGER NOT NULL CHECK (rep_min >= 1),
+    rep_max         INTEGER NOT NULL CHECK (rep_max >= rep_min AND rep_max <= 50),
+    rest_sec        INTEGER NOT NULL CHECK (rest_sec BETWEEN 15 AND 600),
+    start_weight_kg REAL CHECK (start_weight_kg IS NULL OR start_weight_kg >= 0),
+    UNIQUE (program_day_id, sort_order)
+  );
+
+  CREATE TABLE member_programs (
+    id             INTEGER PRIMARY KEY,
+    member_id      INTEGER NOT NULL REFERENCES members(id),
+    program_id     INTEGER NOT NULL REFERENCES programs(id),
+    next_day_index INTEGER NOT NULL DEFAULT 1 CHECK (next_day_index >= 1),
+    started_at     TEXT NOT NULL,
+    ended_at       TEXT,
+    created_at     TEXT NOT NULL,
+    modified_at    TEXT NOT NULL
+  );
+  -- At most one running programme per member.
+  CREATE UNIQUE INDEX idx_member_programs_active ON member_programs(member_id) WHERE ended_at IS NULL;
+
+  CREATE TABLE workouts (
+    id                INTEGER PRIMARY KEY,
+    member_id         INTEGER NOT NULL REFERENCES members(id),
+    member_program_id INTEGER NOT NULL REFERENCES member_programs(id),
+    program_day_id    INTEGER NOT NULL REFERENCES program_days(id),
+    status            TEXT NOT NULL CHECK (status IN ('active', 'done')),
+    started_at        TEXT NOT NULL,
+    finished_at       TEXT,
+    CHECK ((status = 'done') = (finished_at IS NOT NULL))
+  );
+  -- At most one workout in progress per member.
+  CREATE UNIQUE INDEX idx_workouts_active ON workouts(member_id) WHERE status = 'active';
+  CREATE INDEX idx_workouts_member ON workouts(member_id, finished_at);
+
+  CREATE TABLE workout_sets (
+    id              INTEGER PRIMARY KEY,
+    workout_id      INTEGER NOT NULL REFERENCES workouts(id),
+    program_item_id INTEGER NOT NULL REFERENCES program_items(id),
+    exercise_id     INTEGER NOT NULL REFERENCES exercises(id),
+    set_no          INTEGER NOT NULL CHECK (set_no >= 1),
+    weight_kg       REAL CHECK (weight_kg IS NULL OR weight_kg BETWEEN 0 AND 500),
+    reps            INTEGER NOT NULL CHECK (reps BETWEEN 0 AND 100),
+    rpe             REAL CHECK (rpe IS NULL OR rpe BETWEEN 5 AND 10),
+    created_at      TEXT NOT NULL,
+    modified_at     TEXT NOT NULL,
+    UNIQUE (workout_id, program_item_id, set_no)
+  );
+  CREATE INDEX idx_workout_sets_exercise ON workout_sets(exercise_id, workout_id);
+  `,
 ];

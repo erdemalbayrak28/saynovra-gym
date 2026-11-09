@@ -173,7 +173,7 @@ function TestTools({ disabled, onSubmit }: { disabled: boolean; onSubmit: (code:
     event.preventDefault();
     if (code.trim()) onSubmit(code.trim());
   };
-  const forged = () => onSubmit(`${GATE_CODE_PREFIX}.1.${gateStep(Date.now())}.i.${'0'.repeat(16)}`);
+  const forged = () => onSubmit(`${GATE_CODE_PREFIX}.1.${gateStep(Date.now())}.i.0.${'0'.repeat(16)}`);
 
   return (
     <Card className="p-0">
@@ -187,7 +187,7 @@ function TestTools({ disabled, onSubmit }: { disabled: boolean; onSubmit: (code:
             <input
               value={code}
               onChange={(event) => setCode(event.target.value)}
-              placeholder="NG1.1.59805931.i.d16e..."
+              placeholder="NG2.1.59805931.i.0.d16e..."
               className="min-w-0 flex-1 rounded-xl border border-line bg-ink px-3 py-2 font-mono text-sm text-text outline-none focus:border-lime"
               aria-label="QR kodu"
             />

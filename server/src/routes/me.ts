@@ -4,12 +4,15 @@ import type { AppDeps } from '../app.ts';
 import { requireRole, type AppEnv } from '../middleware.ts';
 import { daysLeft, effectiveStatus } from '../domain/membership.ts';
 import { currentMembership, findMemberById, insideCount, isInside, lastGrantedCheckin, toProfile } from '../queries.ts';
+import { trainingRoutes } from './training.ts';
 import { HttpProblem } from '../problem.ts';
 import { localDate } from '../time.ts';
 
-export function meRoutes({ db, config, now }: AppDeps): Hono<AppEnv> {
+export function meRoutes(deps: AppDeps): Hono<AppEnv> {
+  const { db, config, now } = deps;
   const routes = new Hono<AppEnv>();
   routes.use('*', requireRole(config.JWT_SECRET, 'member'));
+  routes.route('/', trainingRoutes(deps));
 
   routes.get('/', (c) => {
     const memberId = c.get('auth').sub;
@@ -19,6 +22,7 @@ export function meRoutes({ db, config, now }: AppDeps): Hono<AppEnv> {
     const at = now();
     const today = localDate(at, config.GYM_TIMEZONE);
     const membership = currentMembership(db, memberId, today);
+    const lastPass = lastGrantedCheckin(db, memberId);
 
     const body: MeResponse = {
       member: toProfile(member),
@@ -32,7 +36,8 @@ export function meRoutes({ db, config, now }: AppDeps): Hono<AppEnv> {
           }
         : null,
       isInside: isInside(db, memberId, at),
-      lastCheckinAt: lastGrantedCheckin(db, memberId)?.created_at ?? null,
+      lastCheckinAt: lastPass?.created_at ?? null,
+      presenceSeq: lastPass?.id ?? 0,
       gym: { insideCount: insideCount(db, at), capacity: config.GYM_CAPACITY },
     };
     return c.json(body);

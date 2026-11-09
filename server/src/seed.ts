@@ -2,10 +2,12 @@
 // All people are fictional. Re-run shortly before a demo so "inside now" reflects the current hour.
 
 import { rmSync } from 'node:fs';
-import { hashSecret, newQrSecret } from './auth.ts';
+import { hashSecret } from './auth.ts';
+import { seedCatalog } from './catalog.ts';
 import { loadConfig } from './config.ts';
 import { openDb, transaction, type Db } from './db.ts';
 import { DEMO_MEMBER_PASSWORD, DEMO_MEMBER_PHONE, DEMO_STAFF as STAFF } from './demo.ts';
+import { seedTrainingHistory } from './seed-training.ts';
 import { addDays, localDate } from './time.ts';
 
 const PLANS = [
@@ -80,6 +82,11 @@ async function main(): Promise<void> {
   const today = localDate(now, config.GYM_TIMEZONE);
   const random = rng(2026);
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
+  // Deterministic gate keys: re-seeding keeps phones that are already signed in working.
+  // Demo database only; real members get random keys at registration (auth.newQrSecret).
+  const secretRandom = rng(4242);
+  const demoQrSecret = () =>
+    Array.from({ length: 32 }, () => Math.floor(secretRandom() * 256).toString(16).padStart(2, '0')).join('');
 
   const staffHashes = await Promise.all(STAFF.map((s) => hashSecret(s.pin)));
   // Every fictional member shares the demo password, so one hash is enough.
@@ -113,7 +120,7 @@ async function main(): Promise<void> {
         )
         .run(
           fullName, phone, memberHash, 1975 + Math.floor(random() * 30), extra.heightCm, extra.weightKg,
-          pick(['lose', 'gain', 'fit', 'strength'] as const), newQrSecret(), stamp, stamp, deskId,
+          pick(['lose', 'gain', 'fit', 'strength'] as const), demoQrSecret(), stamp, stamp, deskId,
         );
       return Number(result.lastInsertRowid);
     };
@@ -156,7 +163,9 @@ async function main(): Promise<void> {
       addMembership(id, pick(PLANS).name, daysLeft, status, 2 + Math.floor(random() * 4));
     }
 
-    return insertHistory(db, members, now, today, random);
+    const programIds = seedCatalog(db, now);
+    const workouts = seedTrainingHistory(db, { memberId: 1, programId: programIds.get('hipertrofi-ust-alt') ?? 0, today });
+    return { ...insertHistory(db, members, now, today, random), workouts };
   });
 
   db.close();
@@ -166,6 +175,7 @@ async function main(): Promise<void> {
       members: PERSONAS.length + GENERATED_MEMBERS,
       checkins: summary.checkins,
       insideNow: summary.insideNow,
+      demoWorkouts: summary.workouts,
       demoMemberPhone: DEMO_MEMBER_PHONE,
       note: 'Demo şifresi ve PIN\'ler README.md içinde',
     }),

@@ -65,7 +65,7 @@ describe('HTTP API', () => {
 
     const staffLogin = await app.request('/auth/staff/login', json({ pin: '2024' }));
     const { token: staffToken } = (await staffLogin.json()) as { token: string };
-    const code = createGateCode(memberId, 'in', NOW.getTime(), gateSigner(session.qrSecret));
+    const code = createGateCode(memberId, 'in', before.presenceSeq, NOW.getTime(), gateSigner(session.qrSecret));
     const scanRes = await app.request('/gate/scan', {
       ...json({ code }),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${staffToken}` },
@@ -77,6 +77,7 @@ describe('HTTP API', () => {
 
     const after = (await (await app.request('/me', asMember)).json()) as MeResponse;
     assert.equal(after.isInside, true);
+    assert.equal(after.presenceSeq, scan.checkin.id);
   });
 
   it('keeps members away from staff endpoints and strangers away from everything', async () => {

@@ -9,6 +9,7 @@ import { HttpProblem, problemResponse, toProblem } from './problem.ts';
 import { authRoutes } from './routes/auth.ts';
 import { gateRoutes } from './routes/gate.ts';
 import { meRoutes } from './routes/me.ts';
+import { programRoutes } from './routes/programs.ts';
 import { staffRoutes } from './routes/staff.ts';
 
 export interface AppDeps {
@@ -29,6 +30,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.get('/health', (c) => c.json({ ok: true }));
   app.route('/auth', authRoutes(deps));
   app.route('/me', meRoutes(deps));
+  app.route('/programs', programRoutes(deps));
   app.route('/gate', gateRoutes(deps));
   app.route('/staff', staffRoutes(deps));
 

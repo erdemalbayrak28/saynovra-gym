@@ -11,6 +11,7 @@ import {
   type TextProps,
   type ViewStyle,
 } from 'react-native';
+import { ChevronLeft } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, radius, space } from './theme';
 
@@ -34,6 +35,24 @@ export function Screen({
         {children}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/** Title row for stack screens pushed over the tabs. */
+export function ScreenHeader({ label, title, onBack, right }: { label?: string; title: string; onBack: () => void; right?: ReactNode }) {
+  return (
+    <View style={styles.headerRow}>
+      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Geri" hitSlop={12} style={styles.backButton}>
+        <ChevronLeft size={22} color={colors.text} />
+      </Pressable>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        {label ? <Label>{label}</Label> : null}
+        <Title style={{ fontSize: 20 }} numberOfLines={1}>
+          {title}
+        </Title>
+      </View>
+      {right}
+    </View>
   );
 }
 
@@ -127,6 +146,17 @@ export function Pill({ text, color, background }: { text: string; color: string;
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.ink },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingTop: space.sm },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
   scroll: { padding: space.lg, paddingBottom: 120, gap: space.lg },
   title: { fontFamily: fonts.display, fontSize: 24, color: colors.text, letterSpacing: -0.4 },
   body: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.muted },

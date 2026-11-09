@@ -34,7 +34,20 @@ export function hoursAgo(now: Date, hours: number): string {
 
 /** UTC instant of local midnight for `now`'s calendar day in `timeZone`. */
 export function startOfLocalDay(now: Date, timeZone: string): string {
-  return new Date(dateToUtcMs(localDate(now, timeZone)) - offsetMinutes(now, timeZone) * 60 * 1000).toISOString();
+  return startOfLocalDate(localDate(now, timeZone), timeZone);
+}
+
+/** UTC instant of local midnight of a calendar date in `timeZone`. */
+export function startOfLocalDate(isoDate: string, timeZone: string): string {
+  const midnightUtc = dateToUtcMs(isoDate);
+  const noon = new Date(midnightUtc + 12 * 60 * 60 * 1000);
+  return new Date(midnightUtc - offsetMinutes(noon, timeZone) * 60 * 1000).toISOString();
+}
+
+/** Monday of the week containing `isoDate` (weeks start on Monday in Türkiye). */
+export function mondayOf(isoDate: string): string {
+  const weekday = new Date(dateToUtcMs(isoDate)).getUTCDay();
+  return addDays(isoDate, -((weekday + 6) % 7));
 }
 
 function offsetMinutes(at: Date, timeZone: string): number {

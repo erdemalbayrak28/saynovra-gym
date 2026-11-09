@@ -139,9 +139,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
         if (event?.type !== 'checkin') return;
         setLastCheckin({ checkin: event.checkin, receivedAt: Date.now() });
+        // A granted pass moves the presence sequence on; the QR screen needs it at once for the next code.
         setMe((current) =>
           current && event.checkin.result === 'granted'
-            ? { ...current, isInside: event.checkin.direction === 'in', gym: event.gym }
+            ? { ...current, isInside: event.checkin.direction === 'in', presenceSeq: event.checkin.id, gym: event.gym }
             : current,
         );
         void refreshMe();

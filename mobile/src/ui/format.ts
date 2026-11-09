@@ -9,6 +9,22 @@ export function longDate(isoDate: string): string {
   return `${day} ${MONTHS[month - 1] ?? ''} ${year}`;
 }
 
+/** "2026-10-12" -> "12 Eki" for chart labels. */
+export function shortDate(isoDate: string): string {
+  const [, month, day] = isoDate.split('-').map(Number);
+  if (!month || !day) return isoDate;
+  return `${day} ${(MONTHS[month - 1] ?? '').slice(0, 3)}`;
+}
+
+/** 32.5 -> "32,5" (Turkish decimal comma). */
+export function kg(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1).replace('.', ',');
+}
+
+export function setsText(sets: number, repMin: number, repMax: number): string {
+  return `${sets} × ${repMin === repMax ? repMin : `${repMin}-${repMax}`}`;
+}
+
 export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? fullName;
 }

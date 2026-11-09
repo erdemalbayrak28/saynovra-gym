@@ -1,14 +1,15 @@
 import { Tabs, type BottomTabBarProps } from 'expo-router/js-tabs';
-import { House, QrCode, UserRound } from 'lucide-react-native';
+import { Dumbbell, House, QrCode, UserRound } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, fonts } from '@/ui/theme';
 
-const ICONS = { index: House, qr: QrCode, profile: UserRound } as const;
+const ICONS = { index: House, training: Dumbbell, qr: QrCode, profile: UserRound } as const;
 
 export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.ink } }} tabBar={(props) => <TabBar {...props} />}>
       <Tabs.Screen name="index" options={{ title: 'Ana Sayfa' }} />
+      <Tabs.Screen name="training" options={{ title: 'Antrenman' }} />
       <Tabs.Screen name="qr" options={{ title: 'QR Geçiş' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profil' }} />
     </Tabs>

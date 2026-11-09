@@ -38,11 +38,15 @@ export default function QrScreen() {
   const banner = lastCheckin && now - lastCheckin.receivedAt < BANNER_MS ? lastCheckin.checkin : null;
 
   const direction: GateDirection = me?.isInside ? 'out' : 'in';
+  const seq = me?.presenceSeq ?? null;
   const step = gateStep(now);
   const signer = useMemo(() => (session ? gateSigner(session.qrSecret) : null), [session]);
   const code = useMemo(
-    () => (session && signer ? createGateCode(session.member.id, direction, step * GATE_STEP_SECONDS * 1000, signer) : null),
-    [session, signer, direction, step],
+    () =>
+      session && signer && seq !== null
+        ? createGateCode(session.member.id, direction, seq, step * GATE_STEP_SECONDS * 1000, signer)
+        : null,
+    [session, signer, direction, seq, step],
   );
   const secondsLeft = Math.ceil(msUntilNextStep(now) / 1000);
   const name = me?.member.fullName ?? session?.member.fullName ?? '';

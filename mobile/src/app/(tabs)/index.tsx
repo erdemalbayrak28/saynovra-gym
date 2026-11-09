@@ -1,22 +1,26 @@
 import { router } from 'expo-router';
-import { CalendarDays, DoorOpen, QrCode, Users } from 'lucide-react-native';
+import { CalendarDays, DoorOpen, Dumbbell, Play, QrCode, Users } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import type { GymStatus, MembershipSummary } from '../../../../shared/contract';
+import type { GymStatus, MembershipSummary, MyTrainingResponse } from '../../../../shared/contract';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { useResource } from '@/lib/useResource';
 import { Body, Button, Card, Initials, Label, Pill, Screen, Title } from '@/ui/components';
 import { MEMBERSHIP_STATUS_TEXT, firstName, initials, longDate } from '@/ui/format';
 import { colors, fonts, radius, space } from '@/ui/theme';
 
 export default function HomeScreen() {
   const { session, me, meError, refreshMe } = useSession();
+  const training = useResource(api.training);
+  const reloadTraining = training.reload;
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshMe();
+    await Promise.all([refreshMe(), reloadTraining()]);
     setRefreshing(false);
-  }, [refreshMe]);
+  }, [refreshMe, reloadTraining]);
 
   const fullName = me?.member.fullName ?? session?.member.fullName ?? '';
 
@@ -40,6 +44,7 @@ export default function HomeScreen() {
       )}
 
       {me && <MembershipCard membership={me.membership} />}
+      {training.data && <TodayCard training={training.data} />}
       {me && <PresenceCard inside={me.isInside} />}
       {me && <OccupancyCard gym={me.gym} />}
     </Screen>
@@ -75,6 +80,40 @@ function MembershipCard({ membership }: { membership: MembershipSummary | null }
         <CalendarDays size={16} color={colors.muted} />
         <Body>{`Bitiş: ${longDate(membership.endsOn)}`}</Body>
       </View>
+    </Card>
+  );
+}
+
+function TodayCard({ training }: { training: MyTrainingResponse }) {
+  const { enrollment, nextDay } = training;
+  if (!enrollment || !nextDay) {
+    return (
+      <Card>
+        <View style={styles.inline}>
+          <Dumbbell size={16} color={colors.lime} />
+          <Label style={{ color: colors.text }}>Antrenman</Label>
+        </View>
+        <Body>Henüz bir program seçmedin. Hedefine uygun programı seç, uygulama her gün ne yapacağını söylesin.</Body>
+        <Button title="Program seç" variant="ghost" onPress={() => router.navigate('/training')} />
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <View style={styles.rowBetween}>
+        <View style={styles.inline}>
+          <Dumbbell size={16} color={colors.lime} />
+          <Label style={{ color: colors.text }}>{training.activeWorkoutId ? 'Yarım kalan antrenman' : 'Sıradaki antrenman'}</Label>
+        </View>
+        <Body>{`Bu hafta ${training.weekWorkouts}`}</Body>
+      </View>
+      <Text style={styles.presenceText}>{nextDay.name}</Text>
+      <Body>{`${nextDay.items.length} hareket · ~${nextDay.estimatedMinutes} dk · ${enrollment.program.name}`}</Body>
+      <Button
+        title={training.activeWorkoutId ? 'Devam et' : 'Antrenmana başla'}
+        onPress={() => router.push('/workout')}
+        icon={<Play size={18} color={colors.ink} fill={colors.ink} />}
+      />
     </Card>
   );
 }
