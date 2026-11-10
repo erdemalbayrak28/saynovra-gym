@@ -243,4 +243,46 @@ export const MIGRATIONS: readonly string[] = [
 
   ALTER TABLE memberships ADD COLUMN modified_by INTEGER REFERENCES staff(id);
   `,
+
+  // 5: onboarding. Reception opens accounts; the member activates with a one-time code and sets
+  // their own password. KVKK consent decisions are append-only.
+  `
+  CREATE TABLE member_activations (
+    id              INTEGER PRIMARY KEY,
+    member_id       INTEGER NOT NULL REFERENCES members(id),
+    code_hash       TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts BETWEEN 0 AND 5),
+    used_at         TEXT,
+    revoked_at      TEXT,
+    created_at      TEXT NOT NULL,
+    created_by      INTEGER NOT NULL REFERENCES staff(id),
+    modified_at     TEXT NOT NULL,
+    CHECK (used_at IS NULL OR revoked_at IS NULL)
+  );
+  -- At most one open (neither used nor revoked) code per member.
+  CREATE UNIQUE INDEX idx_member_activations_open ON member_activations(member_id) WHERE used_at IS NULL AND revoked_at IS NULL;
+
+  CREATE TABLE member_consents (
+    id         INTEGER PRIMARY KEY,
+    member_id  INTEGER NOT NULL REFERENCES members(id),
+    kind       TEXT NOT NULL CHECK (kind IN ('notice', 'optional_data')),
+    version    TEXT NOT NULL CHECK (length(version) BETWEEN 1 AND 20),
+    granted    INTEGER NOT NULL CHECK (granted IN (0, 1)),
+    created_at TEXT NOT NULL,
+    created_by INTEGER REFERENCES staff(id),
+    CHECK (kind = 'optional_data' OR granted = 1)
+  );
+  CREATE INDEX idx_member_consents_member ON member_consents(member_id, id);
+  CREATE TRIGGER member_consents_no_update BEFORE UPDATE ON member_consents
+    BEGIN SELECT RAISE(ABORT, 'member_consents is append-only'); END;
+  CREATE TRIGGER member_consents_no_delete BEFORE DELETE ON member_consents
+    BEGIN SELECT RAISE(ABORT, 'member_consents is append-only'); END;
+
+  ALTER TABLE members ADD COLUMN activated_at TEXT;
+  ALTER TABLE members ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0 CHECK (session_epoch >= 0);
+  ALTER TABLE members ADD COLUMN modified_by INTEGER REFERENCES staff(id);
+  -- Everyone who already had an account signed in with a password of their own.
+  UPDATE members SET activated_at = created_at;
+  `,
 ];

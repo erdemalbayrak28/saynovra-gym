@@ -5,6 +5,7 @@ import type {
   LogSetRequest,
   MeResponse,
   MemberLoginResponse,
+  MyConsentsResponse,
   MyTrainingResponse,
   OccupancyResponse,
   OpenPostRequest,
@@ -65,7 +66,10 @@ const post = <T>(path: string, token: string, body?: unknown) => request<T>(path
 export const api = {
   login: (phone: string, password: string) =>
     request<MemberLoginResponse>('/auth/member/login', { method: 'POST', body: { phone, password } }),
+  activate: (phone: string, code: string, password: string) =>
+    request<MemberLoginResponse>('/auth/member/activate', { method: 'POST', body: { phone, code, password } }),
   me: (token: string) => request<MeResponse>('/me', { token }),
+  consents: (token: string) => request<MyConsentsResponse>('/me/consents', { token }),
   qrKey: (token: string) => request<QrKeyResponse>('/me/qr-key', { token }),
 
   programs: (token: string) => request<ProgramSummary[]>('/programs', { token }),

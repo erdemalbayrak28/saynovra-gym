@@ -1,5 +1,7 @@
 import type {
   CheckinDto,
+  ConsentDto,
+  ConsentKind,
   GateDenyReason,
   GateDirection,
   MemberGoal,
@@ -28,6 +30,7 @@ export interface MemberRow {
   weight_kg: number | null;
   goal: MemberGoal | null;
   qr_secret: string;
+  session_epoch: number;
 }
 
 export interface StaffRow {
@@ -61,7 +64,7 @@ interface CheckinJoinRow {
 // Members and staff
 // ---------------------------------------------------------------------------
 
-const MEMBER_COLUMNS = 'id, full_name, phone, password_hash, birth_year, height_cm, weight_kg, goal, qr_secret';
+const MEMBER_COLUMNS = 'id, full_name, phone, password_hash, birth_year, height_cm, weight_kg, goal, qr_secret, session_epoch';
 
 export function findMemberById(db: Db, id: number): MemberRow | undefined {
   return db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE id = ?`).get(id) as MemberRow | undefined;
@@ -69,6 +72,35 @@ export function findMemberById(db: Db, id: number): MemberRow | undefined {
 
 export function findMemberByPhone(db: Db, phone: string): MemberRow | undefined {
   return db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE phone = ?`).get(phone) as MemberRow | undefined;
+}
+
+/** KVKK decisions, newest first. */
+export function memberConsents(db: Db, memberId: number): ConsentDto[] {
+  const rows = db
+    .prepare(
+      `SELECT c.kind, c.version, c.granted, c.created_at, s.name AS staff_name
+       FROM member_consents c LEFT JOIN staff s ON s.id = c.created_by
+       WHERE c.member_id = ? ORDER BY c.id DESC`,
+    )
+    .all(memberId) as unknown as { kind: ConsentKind; version: string; granted: number; created_at: string; staff_name: string | null }[];
+  return rows.map((row) => ({ kind: row.kind, version: row.version, granted: row.granted === 1, at: row.created_at, staffName: row.staff_name }));
+}
+
+/** Expiry of the member's activation code if one is open and not yet expired. */
+export function openActivationExpiry(db: Db, memberId: number, now: Date): string | null {
+  const row = db
+    .prepare(
+      `SELECT expires_at FROM member_activations
+       WHERE member_id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
+    )
+    .get(memberId, now.toISOString()) as { expires_at: string } | undefined;
+  return row?.expires_at ?? null;
+}
+
+/** The member's current session epoch, or undefined if the member no longer exists. */
+export function memberSessionEpoch(db: Db, memberId: number): number | undefined {
+  const row = db.prepare('SELECT session_epoch FROM members WHERE id = ?').get(memberId) as { session_epoch: number } | undefined;
+  return row?.session_epoch;
 }
 
 export function listStaff(db: Db): StaffRow[] {

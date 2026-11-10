@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
-import { qrKeyId, type CheckinDto, type LiveEvent, type MeResponse, type MemberProfile } from '../../../shared/contract';
+import { qrKeyId, type CheckinDto, type LiveEvent, type MeResponse, type MemberLoginResponse, type MemberProfile } from '../../../shared/contract';
 import { ApiError, api } from './api';
 import { LIVE_URL } from './config';
 import { gateSigner } from './gate';
@@ -43,6 +43,8 @@ interface SessionValue {
   /** Listen to every live event; returns the unsubscribe function. */
   subscribe: (listener: LiveListener) => () => void;
   signIn: (phone: string, password: string) => Promise<void>;
+  /** First sign-in (or password reset) with the one-time code from reception. */
+  activate: (phone: string, code: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
@@ -133,9 +135,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [signOut, syncQrKey]);
 
-  const signIn = useCallback(
-    async (phone: string, password: string) => {
-      const result = await api.login(phone, password);
+  const establish = useCallback(
+    async (result: MemberLoginResponse) => {
       const stored: StoredSession = { token: result.token, qrSecret: result.qrSecret, member: result.member };
       await writeSecure(STORAGE_KEY, JSON.stringify(stored));
       applySession(stored);
@@ -143,6 +144,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await refreshMe();
     },
     [applySession, refreshMe],
+  );
+  const signIn = useCallback(async (phone: string, password: string) => establish(await api.login(phone, password)), [establish]);
+  const activate = useCallback(
+    async (phone: string, code: string, password: string) => establish(await api.activate(phone, code, password)),
+    [establish],
   );
 
   // Restore a saved session once at startup.
@@ -228,8 +234,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [token, memberId, refreshMe]);
 
   const value = useMemo<SessionValue>(
-    () => ({ status, session, me, meError, lastCheckin, liveConnected, buddyAlert, clearBuddyAlert, subscribe, signIn, signOut, refreshMe }),
-    [status, session, me, meError, lastCheckin, liveConnected, buddyAlert, clearBuddyAlert, subscribe, signIn, signOut, refreshMe],
+    () => ({ status, session, me, meError, lastCheckin, liveConnected, buddyAlert, clearBuddyAlert, subscribe, signIn, activate, signOut, refreshMe }),
+    [status, session, me, meError, lastCheckin, liveConnected, buddyAlert, clearBuddyAlert, subscribe, signIn, activate, signOut, refreshMe],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

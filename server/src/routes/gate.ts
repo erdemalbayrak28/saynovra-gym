@@ -16,7 +16,7 @@ const scanSchema = z.object({ code: z.string().min(1).max(200) });
 
 export function gateRoutes({ db, config, live, now }: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
-  routes.use('*', requireRole(config.JWT_SECRET, 'owner', 'desk'));
+  routes.use('*', requireRole({ secret: config.JWT_SECRET, db }, 'owner', 'desk'));
 
   routes.post('/scan', async (c) => {
     const { code } = await readJson(c, scanSchema);

@@ -40,6 +40,44 @@ export function SalePanel({ plans, memberships, busy, onSell, onClose }: Props) 
         </button>
       </div>
 
+      <PlanPicker plans={plans} planId={planId} method={method} onPlan={setPlanId} onMethod={setMethod} />
+
+      <p className="text-sm text-muted">
+        {start.renewal ? 'Mevcut üyeliğin bitiminden sonra başlar: ' : 'Bugün başlar: '}
+        <span className="text-text">{calendarDate(start.date)}</span>
+        {end && (
+          <>
+            {' '}
+            → <span className="text-text">{calendarDate(end)}</span>
+          </>
+        )}
+      </p>
+
+      <button
+        type="button"
+        disabled={!plan || busy}
+        onClick={() => plan && onSell(plan.id, method)}
+        className="w-full rounded-xl bg-lime px-4 py-2.5 text-sm font-bold text-ink transition disabled:opacity-40"
+      >
+        {plan ? `Satışı kaydet · ${money(plan.priceKurus)}` : 'Paket seçin'}
+      </button>
+      <p className="text-xs text-muted">Demo: gerçek ödeme alınmaz, satış ve ödeme kaydı tutulur.</p>
+    </div>
+  );
+}
+
+interface PickerProps {
+  plans: PlanDto[];
+  planId: number | null;
+  method: PaymentMethod;
+  onPlan: (planId: number) => void;
+  onMethod: (method: PaymentMethod) => void;
+}
+
+/** Package cards and payment method; used by the sale panel and the new member form. */
+export function PlanPicker({ plans, planId, method, onPlan, onMethod }: PickerProps) {
+  return (
+    <>
       <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Paket">
         {plans.map((p) => {
           const chosen = p.id === planId;
@@ -50,7 +88,7 @@ export function SalePanel({ plans, memberships, busy, onSell, onClose }: Props) 
               role="radio"
               aria-checked={chosen}
               aria-label={`${p.name}, ${money(p.priceKurus)}, ${p.durationDays} gün`}
-              onClick={() => setPlanId(p.id)}
+              onClick={() => onPlan(p.id)}
               className={`rounded-xl border p-3 text-left transition ${chosen ? 'border-lime bg-lime/10' : 'border-line bg-surface hover:border-muted'}`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -75,7 +113,7 @@ export function SalePanel({ plans, memberships, busy, onSell, onClose }: Props) 
               type="button"
               role="radio"
               aria-checked={m === method}
-              onClick={() => setMethod(m)}
+              onClick={() => onMethod(m)}
               className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${m === method ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'}`}
             >
               {PAYMENT_METHOD_TEXT[m]}
@@ -83,27 +121,6 @@ export function SalePanel({ plans, memberships, busy, onSell, onClose }: Props) 
           ))}
         </div>
       </div>
-
-      <p className="text-sm text-muted">
-        {start.renewal ? 'Mevcut üyeliğin bitiminden sonra başlar: ' : 'Bugün başlar: '}
-        <span className="text-text">{calendarDate(start.date)}</span>
-        {end && (
-          <>
-            {' '}
-            → <span className="text-text">{calendarDate(end)}</span>
-          </>
-        )}
-      </p>
-
-      <button
-        type="button"
-        disabled={!plan || busy}
-        onClick={() => plan && onSell(plan.id, method)}
-        className="w-full rounded-xl bg-lime px-4 py-2.5 text-sm font-bold text-ink transition disabled:opacity-40"
-      >
-        {plan ? `Satışı kaydet · ${money(plan.priceKurus)}` : 'Paket seçin'}
-      </button>
-      <p className="text-xs text-muted">Demo: gerçek ödeme alınmaz, satış ve ödeme kaydı tutulur.</p>
-    </div>
+    </>
   );
 }

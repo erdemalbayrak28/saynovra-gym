@@ -9,7 +9,7 @@ const idSchema = z.coerce.number().int().positive();
 
 export function programRoutes({ db, config }: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
-  routes.use('*', requireRole(config.JWT_SECRET, 'member', 'owner', 'desk'));
+  routes.use('*', requireRole({ secret: config.JWT_SECRET, db }, 'member', 'owner', 'desk'));
 
   routes.get('/', (c) => c.json(listPrograms(db)));
   routes.get('/:id', (c) => c.json(getProgramDetail(db, validate(idSchema, c.req.param('id')))));

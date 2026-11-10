@@ -1,18 +1,12 @@
-import { LogOut, Wifi, WifiOff } from 'lucide-react-native';
-import { StyleSheet, Text, View } from 'react-native';
-import type { MemberGoal } from '../../../../shared/contract';
+import { router } from 'expo-router';
+import { ChevronRight, LogOut, ShieldCheck, Wifi, WifiOff } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MEMBER_GOAL_TEXT } from '../../../../shared/contract';
 import { API_URL } from '@/lib/config';
 import { useSession } from '@/lib/session';
 import { Body, Button, Card, Initials, Label, Screen, Title } from '@/ui/components';
 import { MEMBERSHIP_STATUS_TEXT, formatPhone, initials, longDate } from '@/ui/format';
 import { colors, fonts, space } from '@/ui/theme';
-
-const GOAL_TEXT: Record<MemberGoal, string> = {
-  lose: 'Kilo vermek',
-  gain: 'Kas kazanmak',
-  fit: 'Formda kalmak',
-  strength: 'Güç',
-};
 
 export default function ProfileScreen() {
   const { session, me, liveConnected, signOut } = useSession();
@@ -34,7 +28,7 @@ export default function ProfileScreen() {
         <Row label="Boy" value={member.heightCm ? `${member.heightCm} cm` : '-'} />
         <Row label="Kilo" value={member.weightKg ? `${member.weightKg} kg` : '-'} />
         <Row label="Doğum yılı" value={member.birthYear ? String(member.birthYear) : '-'} />
-        <Row label="Hedef" value={member.goal ? GOAL_TEXT[member.goal] : '-'} />
+        <Row label="Hedef" value={member.goal ? MEMBER_GOAL_TEXT[member.goal] : '-'} />
       </Card>
 
       {me?.membership && (
@@ -46,6 +40,21 @@ export default function ProfileScreen() {
           <Row label="Bitiş" value={longDate(me.membership.endsOn)} />
         </Card>
       )}
+
+      <Pressable onPress={() => router.push('/kvkk')} accessibilityRole="button">
+        <Card>
+          <View style={styles.row}>
+            <View style={styles.inline}>
+              <ShieldCheck size={18} color={colors.lime} />
+              <View>
+                <Text style={styles.value}>KVKK ve onaylarım</Text>
+                <Body style={{ fontSize: 12 }}>Aydınlatma metni, verdiğin rızalar</Body>
+              </View>
+            </View>
+            <ChevronRight size={18} color={colors.muted} />
+          </View>
+        </Card>
+      </Pressable>
 
       <Card>
         <Label>Bağlantı</Label>

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-10 · Sprint 5: yeni üye kaydı
+
+- Resepsiyonda "Yeni üye": ad soyad ve telefon, KVKK, isteğe bağlı ilk paket, ardından ekranda 6 haneli etkinleştirme kodu. Telefon yazılırken numara kayıtlıysa uyarı ve "Üyeyi aç".
+- KVKK: aydınlatma metni onayı zorunlu; boy, kilo, doğum yılı, cinsiyet ve hedef yalnızca ayrı açık rızayla kaydedilir, rıza yokken gönderilirse sunucu reddeder. Rızalar metin sürümü, zaman ve görevliyle `member_consents` tablosuna yazılır; tetikleyiciler güncellemeyi ve silmeyi engeller. Metinler `shared/consent.ts` içinde.
+- Hesap, rızalar, ilk satış ve kod tek işlemde yazılır; biri başarısızsa hiçbiri yazılmaz.
+- Üye şifresini kendisi belirler: uygulamada "İlk kez mi giriyorsun? Kodla etkinleştir" ekranı (telefon, kod, yeni şifre). Kod 15 dakika geçerli, tek kullanımlık, sunucuda yalnızca özeti tutulur ve loglanmaz; 5 yanlış denemede geçersizleşir. Bilinmeyen telefon, yanlış kod ve süresi dolmuş kod aynı cevabı alır.
+- Şifre sıfırlama: resepsiyon üye kartından yeni kod verir. Yeni şifre belirlenince eski oturumlar kapanır (`members.session_epoch` oturum anahtarına yazılır; sunucuda oturum tutulmaz). Bu sürümden önceki anahtarlar 0 sayılır, açık oturumlar bozulmaz.
+- Herkese açık `POST /auth/member/register` kaldırıldı (kimlik doğrulamasızdı, hiçbir ekran kullanmıyordu). Hesabı yalnızca personel açar: `POST /staff/members`; kod `POST /staff/members/:id/activation`; etkinleştirme `POST /auth/member/activate`; üyenin rızaları `GET /me/consents`.
+- Üye kartında "Uygulama hesabı" bölümü (etkin mi, geçerli kod, rıza geçmişi), listede "Yeni" etiketi; kayıt ve etkinleştirme canlı olayla (`member`) resepsiyona düşer.
+- Mobil profilde "KVKK ve onaylarım": aydınlatma metni ve verilen rızalar.
+- Göç 5: `member_activations`, `member_consents`, `members.activated_at`, `members.session_epoch`, `members.modified_by`. Mevcut üyeler etkin sayılır.
+- Örnek veri: tüm üyelerin rıza kaydı var; Selin Arıkan (`5550000999`) kaydedilmiş ama uygulamaya girmemiş olarak gelir. İkili görünüm prova akışına kayıt adımları eklendi.
+- Testler 88'den 105'e çıktı: kayıt, kod, rıza, oturum düşürme, göç ve kayıttan kapıya uçtan uca akış.
+
 ## 2026-11-09 · Sprint 4: resepsiyon, AI form, ikili görünüm
 
 - Resepsiyon (web, "Resepsiyon" sekmesi): ad, soyad veya telefonla üye arama; "sahin" yazınca "Şahin", "irmak" yazınca "Irmak" da bulunur, listeler Türkçe alfabe sırasında. Arama boşken "7 gün içinde bitenler" listesi (yenileme satılmışlar hariç).

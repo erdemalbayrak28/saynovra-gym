@@ -14,7 +14,7 @@ const checkinsQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).
 export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
   const { db, config, now } = deps;
   const routes = new Hono<AppEnv>();
-  routes.use('*', requireRole(config.JWT_SECRET, 'owner', 'desk'));
+  routes.use('*', requireRole({ secret: config.JWT_SECRET, db }, 'owner', 'desk'));
   routes.route('/', receptionRoutes(deps));
 
   routes.get('/checkins', (c) => {

@@ -1,5 +1,8 @@
 import type {
+  ActivationCodeResponse,
   CheckinDto,
+  CreateMemberRequest,
+  CreateMemberResponse,
   FloorEvent,
   GateScanResponse,
   MemberDetail,
@@ -66,6 +69,9 @@ export const api = {
   member: (token: string, id: number) => request<MemberDetail>(`/staff/members/${id}`, { token }),
   sell: (token: string, memberId: number, body: SellMembershipRequest) =>
     request<MemberDetail>(`/staff/members/${memberId}/memberships`, { method: 'POST', body, token }),
+  createMember: (token: string, body: CreateMemberRequest) => request<CreateMemberResponse>('/staff/members', { method: 'POST', body, token }),
+  issueActivation: (token: string, memberId: number) =>
+    request<ActivationCodeResponse>(`/staff/members/${memberId}/activation`, { method: 'POST', body: {}, token }),
   membershipAction: (token: string, membershipId: number, action: 'freeze' | 'unfreeze' | 'cancel') =>
     request<MemberDetail>(`/staff/memberships/${membershipId}/${action}`, { method: 'POST', token }),
 };

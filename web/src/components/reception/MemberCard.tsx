@@ -1,7 +1,8 @@
-import { Ban, CircleX, Receipt, Snowflake, Sun } from 'lucide-react';
+import { Ban, CircleX, KeyRound, Receipt, ShieldCheck, Snowflake, Sun } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import {
   PAYMENT_METHOD_TEXT,
+  type ActivationCodeResponse,
   type MemberDetail,
   type MembershipDetail,
   type MembershipEventDto,
@@ -12,6 +13,7 @@ import {
 import { calendarDate, dateTime, daysBetween, daysLeftText, gymToday, money, phone } from '../../lib/format';
 import { Card, Label } from '../ui';
 import { StatusPill } from './parts';
+import { ActivationCode } from './ActivationCode';
 import { SalePanel } from './SalePanel';
 
 export type MembershipAction = 'freeze' | 'unfreeze' | 'cancel';
@@ -24,9 +26,11 @@ interface Props {
   error: string | null;
   onSell: (planId: number, method: PaymentMethod) => Promise<boolean>;
   onAction: (membershipId: number, action: MembershipAction) => Promise<boolean>;
+  /** Hands out a new one-time code; null when it failed (the error is shown by the caller). */
+  onIssueCode: () => Promise<ActivationCodeResponse | null>;
 }
 
-export function MemberCard({ detail, plans, role, busy, error, onSell, onAction }: Props) {
+export function MemberCard({ detail, plans, role, busy, error, onSell, onAction, onIssueCode }: Props) {
   const { member, current } = detail;
   return (
     <div className="space-y-4">
@@ -45,6 +49,7 @@ export function MemberCard({ detail, plans, role, busy, error, onSell, onAction 
             <span className={`size-1.5 rounded-full ${member.isInside ? 'bg-ok' : 'bg-muted'}`} />
             {member.isInside ? 'Salonda' : 'Dışarıda'}
           </span>
+          {!member.activated && <AppPill />}
         </div>
         <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4">
           <Fact label="Son 30 gün" value={`${detail.visitsLast30Days} giriş`} />
@@ -54,6 +59,8 @@ export function MemberCard({ detail, plans, role, busy, error, onSell, onAction 
       </Card>
 
       <MembershipPanel key={current?.id ?? 'none'} detail={detail} plans={plans} role={role} busy={busy} error={error} onSell={onSell} onAction={onAction} />
+
+      <AccountPanel key={member.id} detail={detail} busy={busy} onIssueCode={onIssueCode} />
 
       <Card>
         <div className="mb-3 flex items-center justify-between">
@@ -74,6 +81,64 @@ export function MemberCard({ detail, plans, role, busy, error, onSell, onAction 
   );
 }
 
+export function AppPill() {
+  return (
+    <span className="inline-flex items-center whitespace-nowrap rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-xs font-semibold text-info">
+      Uygulamaya girmedi
+    </span>
+  );
+}
+
+/** App account: activated or not, the one-time code, and the KVKK decisions on record. */
+function AccountPanel({ detail, busy, onIssueCode }: { detail: MemberDetail; busy: boolean; onIssueCode: Props['onIssueCode'] }) {
+  const [activation, setActivation] = useState<ActivationCodeResponse | null>(null);
+  const activated = detail.activatedAt !== null;
+  const issue = async () => {
+    const next = await onIssueCode();
+    if (next) setActivation(next);
+  };
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <Label className="text-text">Uygulama hesabı</Label>
+        {activated ? <Label className="text-ok">Etkin</Label> : <AppPill />}
+      </div>
+      <p className="text-sm text-muted">
+        {activated && detail.activatedAt
+          ? `${dateTime(detail.activatedAt)} tarihinde şifresini belirledi. Şifresini unutursa yeni kodla yeniden belirler.`
+          : `Üye henüz şifre belirlemedi.${detail.activationExpiresAt ? ` Verilen kod ${dateTime(detail.activationExpiresAt)} saatine kadar geçerli.` : ' Geçerli bir kodu yok.'}`}
+      </p>
+
+      {activation ? (
+        <div className="mt-4">
+          <ActivationCode activation={activation} memberPhone={detail.member.phone} reset={activated} busy={busy} onRenew={issue} />
+        </div>
+      ) : (
+        <div className="mt-4">
+          <ActionButton disabled={busy} onClick={issue}>
+            <KeyRound className="size-4" /> {activated ? 'Şifre yenileme kodu ver' : 'Etkinleştirme kodu ver'}
+          </ActionButton>
+        </div>
+      )}
+
+      {detail.consents.length > 0 && (
+        <ul className="mt-4 space-y-1.5 border-t border-line pt-4">
+          {detail.consents.map((consent) => (
+            <li key={`${consent.kind}-${consent.at}`} className="flex items-start gap-2 text-xs">
+              <ShieldCheck className={`mt-0.5 size-3.5 shrink-0 ${consent.granted ? 'text-ok' : 'text-muted'}`} />
+              <span className="min-w-0 flex-1 text-muted">
+                <span className="text-text">{consent.kind === 'notice' ? 'Aydınlatma metni okundu' : consent.granted ? 'İsteğe bağlı bilgilere açık rıza verdi' : 'İsteğe bağlı bilgilere rıza vermedi'}</span>
+                {` · sürüm ${consent.version}`}
+              </span>
+              <span className="shrink-0 text-muted">{dateTime(consent.at)}{consent.staffName ? ` · ${consent.staffName}` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
@@ -87,7 +152,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 type Panel = 'none' | 'sale' | 'cancel';
 
-function MembershipPanel({ detail, plans, role, busy, error, onSell, onAction }: Omit<Props, 'detail'> & { detail: MemberDetail }) {
+function MembershipPanel({ detail, plans, role, busy, error, onSell, onAction }: Omit<Props, 'detail' | 'onIssueCode'> & { detail: MemberDetail }) {
   const [panel, setPanel] = useState<Panel>('none');
   const current = detail.current;
   const upcoming = detail.memberships.filter((m) => m.upcoming && m.status === 'active');

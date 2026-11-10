@@ -19,12 +19,15 @@ interface Client {
  */
 export class LiveHub {
   #secret: string;
+  #isCurrent: (claims: AuthClaims) => boolean;
   #wss = new WebSocketServer({ noServer: true });
   #clients = new Map<WebSocket, Client>();
   #heartbeat: NodeJS.Timeout | undefined;
 
-  constructor(secret: string) {
+  /** `isCurrent` rejects member tokens from before a password reset (see sessionIsCurrent). */
+  constructor(secret: string, isCurrent: (claims: AuthClaims) => boolean = () => true) {
     this.#secret = secret;
+    this.#isCurrent = isCurrent;
   }
 
   attach(server: Server): void {
@@ -58,7 +61,7 @@ export class LiveHub {
       return;
     }
     const claims = await readToken(this.#secret, url.searchParams.get('token') ?? '');
-    if (!claims) {
+    if (!claims || !this.#isCurrent(claims)) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
       return;
     }

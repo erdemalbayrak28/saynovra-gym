@@ -15,7 +15,7 @@ import {
 import { searchFold, transaction, type Db } from './db.ts';
 import { daysLeft, effectiveStatus, nextStatus, type MembershipEvent } from './domain/membership.ts';
 import { HttpProblem } from './problem.ts';
-import { initials, insideMemberIds, isInside } from './queries.ts';
+import { initials, insideMemberIds, isInside, memberConsents, openActivationExpiry } from './queries.ts';
 import { addDays, daysBetween, hoursAgo } from './time.ts';
 
 const LIST_LIMIT = 20;
@@ -47,7 +47,7 @@ const GOVERNING_CTE = `
 
 const LIST_SELECT = `
   WITH ${GOVERNING_CTE}
-  SELECT m.id, m.full_name, m.phone, m.birth_year, m.created_at, g.plan_name, g.starts_on, g.ends_on, g.status
+  SELECT m.id, m.full_name, m.phone, m.birth_year, m.created_at, m.activated_at, g.plan_name, g.starts_on, g.ends_on, g.status
   FROM members m LEFT JOIN governing g ON g.member_id = m.id AND g.rank = 1`;
 
 // An active membership with no renewal sold after it.
@@ -61,6 +61,7 @@ interface ListRow {
   phone: string;
   birth_year: number | null;
   created_at: string;
+  activated_at: string | null;
   plan_name: string | null;
   starts_on: string | null;
   ends_on: string | null;
@@ -97,6 +98,7 @@ function toListItem(row: ListRow, today: string, inside: boolean): MemberListIte
         ? { planName, status: effectiveStatus(status, endsOn, today), startsOn, endsOn, daysLeft: daysLeft(endsOn, today) }
         : null,
     isInside: inside,
+    activated: row.activated_at !== null,
   };
 }
 
@@ -194,6 +196,9 @@ export function memberDetail(db: Db, memberId: number, today: string, now: Date)
     current: governing,
     memberships,
     history: membershipHistory(db, memberId),
+    activatedAt: row.activated_at,
+    activationExpiresAt: openActivationExpiry(db, memberId, now),
+    consents: memberConsents(db, memberId),
   };
 }
 
@@ -320,36 +325,39 @@ function recordEvent(
  * Returns the new membership id.
  */
 export function sellMembership(db: Db, memberId: number, request: SellMembershipRequest, action: StaffAction): number {
-  return transaction(db, () => {
-    if (!db.prepare('SELECT 1 FROM members WHERE id = ?').get(memberId)) throw new HttpProblem(404, 'Üye bulunamadı');
-    const plan = db
-      .prepare('SELECT id, duration_days, price_kurus FROM plans WHERE id = ? AND is_active = 1')
-      .get(request.planId) as { id: number; duration_days: number; price_kurus: number } | undefined;
-    if (!plan) throw new HttpProblem(404, 'Paket bulunamadı', 'Bu paket satışta değil');
-    if (db.prepare("SELECT 1 FROM memberships WHERE member_id = ? AND status = 'frozen'").get(memberId)) {
-      throw new HttpProblem(409, 'Satış yapılamadı', 'Dondurulmuş üyelik varken yeni paket satılamaz; önce dondurmayı kaldırın');
-    }
+  return transaction(db, () => insertSale(db, memberId, request, action));
+}
 
-    const { last } = db
-      .prepare("SELECT MAX(ends_on) AS last FROM memberships WHERE member_id = ? AND status = 'active'")
-      .get(memberId) as { last: string | null };
-    const startsOn = last && last >= action.today ? addDays(last, 1) : action.today;
-    const endsOn = addDays(startsOn, plan.duration_days - 1);
-    const stamp = action.now.toISOString();
+/** The sale itself, for callers already inside a transaction (new member with a first package). */
+export function insertSale(db: Db, memberId: number, request: SellMembershipRequest, action: StaffAction): number {
+  if (!db.prepare('SELECT 1 FROM members WHERE id = ?').get(memberId)) throw new HttpProblem(404, 'Üye bulunamadı');
+  const plan = db
+    .prepare('SELECT id, duration_days, price_kurus FROM plans WHERE id = ? AND is_active = 1')
+    .get(request.planId) as { id: number; duration_days: number; price_kurus: number } | undefined;
+  if (!plan) throw new HttpProblem(404, 'Paket bulunamadı', 'Bu paket satışta değil');
+  if (db.prepare("SELECT 1 FROM memberships WHERE member_id = ? AND status = 'frozen'").get(memberId)) {
+    throw new HttpProblem(409, 'Satış yapılamadı', 'Dondurulmuş üyelik varken yeni paket satılamaz; önce dondurmayı kaldırın');
+  }
 
-    const membership = db
-      .prepare(
-        `INSERT INTO memberships (member_id, plan_id, starts_on, ends_on, status, price_kurus, created_at, modified_at, created_by, modified_by)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
-      )
-      .run(memberId, plan.id, startsOn, endsOn, plan.price_kurus, stamp, stamp, action.staffId, action.staffId);
-    const membershipId = Number(membership.lastInsertRowid);
-    const payment = db
-      .prepare('INSERT INTO payments (membership_id, amount_kurus, method, created_at, created_by) VALUES (?, ?, ?, ?, ?)')
-      .run(membershipId, plan.price_kurus, request.method, stamp, action.staffId);
-    recordEvent(db, { membershipId, type: 'sale', paymentId: Number(payment.lastInsertRowid), action });
-    return membershipId;
-  });
+  const { last } = db
+    .prepare("SELECT MAX(ends_on) AS last FROM memberships WHERE member_id = ? AND status = 'active'")
+    .get(memberId) as { last: string | null };
+  const startsOn = last && last >= action.today ? addDays(last, 1) : action.today;
+  const endsOn = addDays(startsOn, plan.duration_days - 1);
+  const stamp = action.now.toISOString();
+
+  const membership = db
+    .prepare(
+      `INSERT INTO memberships (member_id, plan_id, starts_on, ends_on, status, price_kurus, created_at, modified_at, created_by, modified_by)
+       VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
+    )
+    .run(memberId, plan.id, startsOn, endsOn, plan.price_kurus, stamp, stamp, action.staffId, action.staffId);
+  const membershipId = Number(membership.lastInsertRowid);
+  const payment = db
+    .prepare('INSERT INTO payments (membership_id, amount_kurus, method, created_at, created_by) VALUES (?, ?, ?, ?, ?)')
+    .run(membershipId, plan.price_kurus, request.method, stamp, action.staffId);
+  recordEvent(db, { membershipId, type: 'sale', paymentId: Number(payment.lastInsertRowid), action });
+  return membershipId;
 }
 
 /** Freezes the running membership if its package allows it. Returns the member id. */

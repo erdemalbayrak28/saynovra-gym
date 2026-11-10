@@ -56,6 +56,14 @@ Telefonsuz prova: kapı ekranındaki "Test araçları" ile kod yapıştırılabi
 2. Ad, soyad veya telefonla arayın; arama boşken bu hafta üyeliği bitecekler listelenir.
 3. Üyeyi seçin: "Paket sat" (paket ve ödeme türü), "Dondur" / "Dondurmayı kaldır", "İptal et". Her işlem "İşlem geçmişi"ne yazılır ve üyenin telefonuna anında düşer.
 
+### Yeni üye kaydı
+1. Resepsiyonda arama kutusunun yanındaki "Yeni üye": ad soyad ve cep telefonu. Numara kayıtlıysa uyarı ve "Üyeyi aç" çıkar.
+2. KVKK: aydınlatma metni okundu onayı zorunlu. Boy, kilo, doğum yılı, cinsiyet ve hedef yalnızca "açık rıza" işaretlenirse girilir ve kaydedilir.
+3. Paket (isteğe bağlı) ve ödeme türü, sonra "Kaydı aç". Ekranda 6 haneli etkinleştirme kodu çıkar, 15 dakika geçerli.
+4. Telefonda giriş ekranındaki "İlk kez mi giriyorsun? Kodla etkinleştir": telefon, kod ve yeni şifre. Uygulama açılır, resepsiyondaki kart "Etkin" olur.
+
+Şifresini unutan üyeye üye kartındaki "Şifre yenileme kodu ver" ile yeni kod verilir; yeni şifre belirlenince üyenin eski oturumları kapanır. Uygulamada herkese açık kayıt yoktur, hesabı yalnızca personel açar. Örnek veride Selin Arıkan (`5550000999`) kaydedilmiş ama uygulamaya girmemiş olarak gelir; ona resepsiyondan kod verip akışı deneyebilirsiniz.
+
 ### AI form analizi
 1. Üst menüden "AI Form". Hareketi seçin (Squat, Bench press), "Kamerayı başlat" deyin ya da "Video dosyası" ile telefonla çektiğiniz bir seti açın.
 2. Squat için kamera yanda, baştan ayağa tüm vücut kadrajda (2-3 metre). Bench için kamera sehpanın yanında, omuz hizasında.
@@ -77,6 +85,7 @@ Yalnızca yerel örnek veritabanı içindir.
 |---|---|
 | Demo üye (Erdem Albayrak) | Telefon `5550000001`, şifre `novra2026` |
 | Diğer 485 kurgu üye | Telefon `5550000002` ile `5550000486` arası, aynı şifre |
+| Yeni kayıt (Selin Arıkan) | Telefon `5550000999`, şifresi yok: resepsiyondan kod verip etkinleştirin |
 | Personel: Salon Sahibi | PIN `1907` |
 | Personel: Gişe | PIN `2024` |
 

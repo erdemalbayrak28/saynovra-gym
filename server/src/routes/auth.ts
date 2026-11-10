@@ -1,10 +1,17 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import type { MemberLoginResponse, StaffLoginResponse } from '../../../shared/contract.ts';
+import {
+  ACTIVATION_CODE_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  type MemberLoginResponse,
+  type StaffLoginResponse,
+} from '../../../shared/contract.ts';
 import type { AppDeps } from '../app.ts';
 import type { AppEnv } from '../middleware.ts';
-import { hashSecret, issueToken, newQrSecret, verifySecret } from '../auth.ts';
-import { findMemberById, findMemberByPhone, listStaff, toProfile } from '../queries.ts';
+import { hashSecret, isStaff, issueToken, verifySecret } from '../auth.ts';
+import { log } from '../log.ts';
+import { activateMember } from '../onboarding.ts';
+import { findMemberByPhone, listStaff, toProfile, type MemberRow } from '../queries.ts';
 import { HttpProblem, readJson } from '../problem.ts';
 
 /** Accepts "0555 000 00 01", "+90 555...", "5550000001"; stores the 10-digit national form. */
@@ -24,14 +31,10 @@ const memberLoginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
-const registerSchema = z.object({
-  fullName: z.string().trim().min(2).max(80),
+const activateSchema = z.object({
   phone: phoneSchema,
-  password: z.string().min(8, 'Şifre en az 8 karakter olmalı').max(200),
-  birthYear: z.number().int().min(1920).max(2015).nullable().default(null),
-  heightCm: z.number().int().min(120).max(230).nullable().default(null),
-  weightKg: z.number().min(30).max(250).nullable().default(null),
-  goal: z.enum(['lose', 'gain', 'fit', 'strength']).nullable().default(null),
+  code: z.string().regex(new RegExp(String.raw`^\d{${ACTIVATION_CODE_LENGTH}}$`), `Kod ${ACTIVATION_CODE_LENGTH} haneli olmalı`),
+  password: z.string().min(PASSWORD_MIN_LENGTH, `Şifre en az ${PASSWORD_MIN_LENGTH} karakter olmalı`).max(200),
 });
 
 const staffLoginSchema = z.object({
@@ -40,8 +43,13 @@ const staffLoginSchema = z.object({
 
 const INVALID_LOGIN = 'Telefon veya şifre hatalı';
 
-export function authRoutes({ db, config }: AppDeps): Hono<AppEnv> {
+export function authRoutes({ db, config, live, now }: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
+  const loginResponse = async (member: MemberRow): Promise<MemberLoginResponse> => ({
+    token: await issueToken(config.JWT_SECRET, { sub: member.id, role: 'member', ep: member.session_epoch }),
+    qrSecret: member.qr_secret,
+    member: toProfile(member),
+  });
   // Verified against when the phone is unknown, so both failure paths cost the same time.
   const decoyHash = hashSecret('decoy-password-for-timing');
 
@@ -51,45 +59,17 @@ export function authRoutes({ db, config }: AppDeps): Hono<AppEnv> {
     const valid = await verifySecret(password, member?.password_hash ?? (await decoyHash));
     if (!member || !valid) throw new HttpProblem(401, 'Giriş başarısız', INVALID_LOGIN);
 
-    const body: MemberLoginResponse = {
-      token: await issueToken(config.JWT_SECRET, { sub: member.id, role: 'member' }),
-      qrSecret: member.qr_secret,
-      member: toProfile(member),
-    };
-    return c.json(body);
+    return c.json(await loginResponse(member));
   });
 
-  routes.post('/member/register', async (c) => {
-    const input = await readJson(c, registerSchema);
-    if (findMemberByPhone(db, input.phone)) {
-      throw new HttpProblem(409, 'Kayıt yapılamadı', 'Bu telefon numarasıyla kayıtlı bir üye var');
-    }
-    const now = new Date().toISOString();
-    const result = db
-      .prepare(
-        `INSERT INTO members (full_name, phone, password_hash, birth_year, height_cm, weight_kg, goal, qr_secret, created_at, modified_at)
-         VALUES (:fullName, :phone, :passwordHash, :birthYear, :heightCm, :weightKg, :goal, :qrSecret, :now, :now)`,
-      )
-      .run({
-        fullName: input.fullName,
-        phone: input.phone,
-        passwordHash: await hashSecret(input.password),
-        birthYear: input.birthYear,
-        heightCm: input.heightCm,
-        weightKg: input.weightKg,
-        goal: input.goal,
-        qrSecret: newQrSecret(),
-        now,
-      });
-    const member = findMemberById(db, Number(result.lastInsertRowid));
-    if (!member) throw new Error('Member vanished right after insert');
-
-    const body: MemberLoginResponse = {
-      token: await issueToken(config.JWT_SECRET, { sub: member.id, role: 'member' }),
-      qrSecret: member.qr_secret,
-      member: toProfile(member),
-    };
-    return c.json(body, 201);
+  // Accounts are opened at reception (POST /staff/members); the member turns the one-time code
+  // into a password of their own here.
+  routes.post('/member/activate', async (c) => {
+    const input = await readJson(c, activateSchema);
+    const member = await activateMember(db, input, now());
+    live.publish({ type: 'member', memberId: member.id }, isStaff);
+    log.info('member activated', { memberId: member.id });
+    return c.json(await loginResponse(member));
   });
 
   routes.post('/staff/login', async (c) => {

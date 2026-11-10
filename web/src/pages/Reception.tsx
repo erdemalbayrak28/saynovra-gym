@@ -1,8 +1,9 @@
-import { Search } from 'lucide-react';
+import { Search, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   EXPIRING_WITHIN_DAYS,
   MEMBER_SEARCH_MIN,
+  type ActivationCodeResponse,
   type LiveEvent,
   type MemberDetail,
   type MemberListItem,
@@ -11,6 +12,7 @@ import {
   type ReceptionSummary,
 } from '../../../shared/contract';
 import { MemberCard, type MembershipAction } from '../components/reception/MemberCard';
+import { NewMemberPanel } from '../components/reception/NewMemberPanel';
 import { MemberRow, ReceptionStats } from '../components/reception/parts';
 import { Card, Label } from '../components/ui';
 import { ApiError, api } from '../lib/api';
@@ -38,6 +40,7 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
   // Responses can arrive out of order; only the latest request of each kind may update the screen.
   const listRequest = useRef(0);
   const selectedRef = useRef<number | null>(null);
@@ -102,7 +105,7 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
   }, [query, loadList]);
 
   useLiveEvent((event: LiveEvent) => {
-    if (event.type === 'membership') {
+    if (event.type === 'membership' || event.type === 'member') {
       loadSummary();
       loadList(query);
       if (event.memberId === selectedId) loadDetail(event.memberId);
@@ -115,6 +118,7 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
   });
 
   const select = (memberId: number) => {
+    setRegistering(false);
     selectedRef.current = memberId;
     setSelectedId(memberId);
     setActionError(null);
@@ -141,6 +145,25 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
   const sell = (planId: number, method: PaymentMethod) =>
     detail ? run(() => api.sell(token, detail.member.id, { planId, method })) : Promise.resolve(false);
   const act = (membershipId: number, action: MembershipAction) => run(() => api.membershipAction(token, membershipId, action));
+  const issueCode = async (): Promise<ActivationCodeResponse | null> => {
+    if (!detail) return null;
+    setBusy(true);
+    setActionError(null);
+    try {
+      return await api.issueActivation(token, detail.member.id);
+    } catch (err) {
+      setActionError(describe(err));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const startRegistration = () => {
+    selectedRef.current = null;
+    setSelectedId(null);
+    setDetail(null);
+    setRegistering(true);
+  };
 
   const searching = query.trim().length >= MEMBER_SEARCH_MIN;
   // In the half-width column the list sits above the member until the screen is very wide.
@@ -152,16 +175,26 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
       <ReceptionStats summary={summary} />
       <div className={`grid items-start gap-6 ${columns}`}>
         <Card>
-          <label className="flex items-center gap-2 rounded-xl border border-line bg-ink px-3 py-2.5 focus-within:border-lime">
-            <Search className="size-4 shrink-0 text-muted" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Ad, soyad veya telefon"
-              className="min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-muted"
-              aria-label="Üye ara"
-            />
-          </label>
+          <div className="flex gap-2">
+            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-ink px-3 py-2.5 focus-within:border-lime">
+              <Search className="size-4 shrink-0 text-muted" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Ad, soyad veya telefon"
+                className="min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-muted"
+                aria-label="Üye ara"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={startRegistration}
+              aria-pressed={registering}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-bold transition ${registering ? 'border border-lime/60 bg-lime/10 text-lime' : 'bg-lime text-ink hover:brightness-105'}`}
+            >
+              <UserPlus className="size-4" /> Yeni üye
+            </button>
+          </div>
           <div className="mb-2 mt-4 flex items-center justify-between">
             <Label className="text-text">{searching ? 'Arama sonuçları' : `${EXPIRING_WITHIN_DAYS} gün içinde bitenler`}</Label>
             {listLoading && <Label className="text-muted">Yükleniyor</Label>}
@@ -178,13 +211,34 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
           )}
         </Card>
 
-        {detail ? (
-          <MemberCard detail={detail} plans={plans} role={session.staff.role} busy={busy} error={actionError} onSell={sell} onAction={act} />
+        {registering ? (
+          <NewMemberPanel
+            token={token}
+            plans={plans}
+            describe={describe}
+            onCreated={() => {
+              loadSummary();
+              loadList(query);
+            }}
+            onOpenMember={select}
+            onClose={() => setRegistering(false)}
+          />
+        ) : detail ? (
+          <MemberCard
+            detail={detail}
+            plans={plans}
+            role={session.staff.role}
+            busy={busy}
+            error={actionError}
+            onSell={sell}
+            onAction={act}
+            onIssueCode={issueCode}
+          />
         ) : (
           <Card className="grid min-h-48 place-items-center text-center">
             <div>
               <p className="font-semibold text-text">{selectedId ? 'Üye yükleniyor' : 'Bir üye seçin'}</p>
-              <p className="mt-1 text-sm text-muted">Ad, soyad ya da telefonla arayın; listeden seçtiğiniz üyenin paketini satabilir, dondurabilir veya iptal edebilirsiniz.</p>
+              <p className="mt-1 text-sm text-muted">Ad, soyad ya da telefonla arayın; listeden seçtiğiniz üyenin paketini satabilir, dondurabilir veya iptal edebilirsiniz. Salona ilk kez gelen için "Yeni üye".</p>
               {actionError && <p className="mt-3 text-sm text-bad">{actionError}</p>}
             </div>
           </Card>

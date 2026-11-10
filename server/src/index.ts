@@ -2,6 +2,8 @@ import type { Server } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
+import { sessionIsCurrent } from './auth.ts';
+import { memberSessionEpoch } from './queries.ts';
 import { loadConfig } from './config.ts';
 import { openDb } from './db.ts';
 import { LiveHub } from './live.ts';
@@ -18,7 +20,7 @@ function lanAddresses(): string[] {
 function main(): void {
   const config = loadConfig();
   const db = openDb(config.DB_PATH);
-  const live = new LiveHub(config.JWT_SECRET);
+  const live = new LiveHub(config.JWT_SECRET, (claims) => sessionIsCurrent(claims, (id) => memberSessionEpoch(db, id)));
   const app = createApp({ db, config, live, now: () => new Date() });
 
   // 0.0.0.0 so the phone on the same Wi-Fi can reach the API.

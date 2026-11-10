@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -81,6 +82,17 @@ export default function LoginScreen() {
           )}
           <Button title="Giriş yap" onPress={submit} loading={busy} />
           <Pressable
+            onPress={() => router.push('/activate')}
+            disabled={busy}
+            accessibilityRole="link"
+            style={[styles.activate, error ? styles.activateHighlight : null]}
+          >
+            <Body style={{ color: colors.text, textAlign: 'center' }}>
+              İlk kez mi giriyorsun? <Text style={{ color: colors.lime, fontFamily: fonts.bodySemi }}>Kodla etkinleştir</Text>
+            </Body>
+            {error && <Body style={{ fontSize: 12, textAlign: 'center' }}>Şifreni unuttuysan resepsiyondan yeni kod iste.</Body>}
+          </Pressable>
+          <Pressable
             onPress={() => {
               setPhone(DEMO_ACCOUNT.phone);
               setPassword(DEMO_ACCOUNT.password);
@@ -129,4 +141,6 @@ const styles = StyleSheet.create({
   },
   error: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.bad },
   demo: { alignItems: 'center', paddingVertical: space.sm },
+  activate: { alignItems: 'center', gap: space.xs, paddingVertical: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line },
+  activateHighlight: { borderColor: 'rgba(200,240,49,0.4)' },
 });

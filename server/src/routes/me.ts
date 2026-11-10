@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
-import { qrKeyId, type MeResponse, type QrKeyResponse } from '../../../shared/contract.ts';
+import { qrKeyId, type MeResponse, type MyConsentsResponse, type QrKeyResponse } from '../../../shared/contract.ts';
 import type { AppDeps } from '../app.ts';
 import { gateSigner } from '../auth.ts';
 import { requireRole, type AppEnv } from '../middleware.ts';
 import { daysLeft, effectiveStatus } from '../domain/membership.ts';
-import { currentMembership, findMemberById, insideCount, isInside, lastGrantedCheckin, toProfile } from '../queries.ts';
+import { currentMembership, findMemberById, memberConsents, insideCount, isInside, lastGrantedCheckin, toProfile } from '../queries.ts';
 import { socialRoutes } from './social.ts';
 import { trainingRoutes } from './training.ts';
 import { HttpProblem } from '../problem.ts';
@@ -13,7 +13,7 @@ import { localDate } from '../time.ts';
 export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   const { db, config, now } = deps;
   const routes = new Hono<AppEnv>();
-  routes.use('*', requireRole(config.JWT_SECRET, 'member'));
+  routes.use('*', requireRole({ secret: config.JWT_SECRET, db }, 'member'));
   routes.route('/', trainingRoutes(deps));
   routes.route('/', socialRoutes(deps));
 
@@ -28,6 +28,11 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     const member = signedInMember(c.get('auth').sub);
     const body: QrKeyResponse = { qrSecret: member.qr_secret, qrKeyId: qrKeyId(gateSigner(member.qr_secret)) };
     c.header('Cache-Control', 'no-store');
+    return c.json(body);
+  });
+
+  routes.get('/consents', (c) => {
+    const body: MyConsentsResponse = { consents: memberConsents(db, c.get('auth').sub) };
     return c.json(body);
   });
 

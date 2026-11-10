@@ -51,6 +51,12 @@ export type Role = 'member' | StaffRole;
 export interface AuthClaims {
   sub: number;
   role: Role;
+  /**
+   * Member tokens only: members.session_epoch when the token was issued. A password reset bumps
+   * the epoch, so older tokens stop working without the server keeping sessions. Tokens issued
+   * before epochs existed carry none and count as 0.
+   */
+  ep?: number;
 }
 
 const TOKEN_TTL_SECONDS: Record<Role, number> = {
@@ -61,18 +67,28 @@ const TOKEN_TTL_SECONDS: Record<Role, number> = {
 
 export function issueToken(secret: string, claims: AuthClaims, nowMs = Date.now()): Promise<string> {
   const iat = Math.floor(nowMs / 1000);
-  return sign({ sub: claims.sub, role: claims.role, iat, exp: iat + TOKEN_TTL_SECONDS[claims.role] }, secret, 'HS256');
+  const epoch = claims.role === 'member' ? { ep: claims.ep ?? 0 } : {};
+  return sign({ sub: claims.sub, role: claims.role, ...epoch, iat, exp: iat + TOKEN_TTL_SECONDS[claims.role] }, secret, 'HS256');
 }
 
 export async function readToken(secret: string, token: string): Promise<AuthClaims | null> {
   if (!token) return null;
   try {
-    const { sub, role } = await verify(token, secret, 'HS256');
+    const { sub, role, ep } = await verify(token, secret, 'HS256');
     if (typeof sub !== 'number' || !isRole(role)) return null;
-    return { sub, role };
+    if (role !== 'member') return { sub, role };
+    if (ep !== undefined && (typeof ep !== 'number' || !Number.isInteger(ep) || ep < 0)) return null;
+    return { sub, role, ep: ep ?? 0 };
   } catch {
     return null;
   }
+}
+
+/** Member tokens must carry the member's current session epoch; staff tokens need no check. */
+export function sessionIsCurrent(claims: AuthClaims, currentEpoch: (memberId: number) => number | undefined): boolean {
+  if (claims.role !== 'member') return true;
+  const epoch = currentEpoch(claims.sub);
+  return epoch !== undefined && epoch === (claims.ep ?? 0);
 }
 
 function isRole(value: unknown): value is Role {

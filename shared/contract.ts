@@ -123,6 +123,20 @@ export const GATE_REASON_TEXT: Record<GateDenyReason, string> = {
 export type MembershipStatus = 'active' | 'frozen' | 'expired' | 'cancelled';
 export type StaffRole = 'owner' | 'desk';
 export type MemberGoal = 'lose' | 'gain' | 'fit' | 'strength';
+export type MemberGender = 'f' | 'm' | 'x';
+
+export const MEMBER_GOAL_TEXT: Record<MemberGoal, string> = {
+  lose: 'Kilo vermek',
+  gain: 'Kas kazanmak',
+  fit: 'Formda kalmak',
+  strength: 'Güçlenmek',
+};
+
+export const MEMBER_GENDER_TEXT: Record<MemberGender, string> = {
+  f: 'Kadın',
+  m: 'Erkek',
+  x: 'Belirtmek istemiyor',
+};
 
 export interface Problem {
   type: string;
@@ -153,6 +167,10 @@ export interface MemberProfile {
   heightCm: number | null;
   weightKg: number | null;
   goal: MemberGoal | null;
+}
+
+export interface MyConsentsResponse {
+  consents: ConsentDto[];
 }
 
 export interface MemberLoginResponse {
@@ -227,7 +245,9 @@ export type LiveEvent =
   /** Gym floor feed for staff screens. */
   | { type: 'floor'; event: FloorEvent }
   /** Reception changed a member's membership; sent to staff screens and to that member's phone. */
-  | { type: 'membership'; memberId: number };
+  | { type: 'membership'; memberId: number }
+  /** A member was registered or activated their account; staff screens refetch. */
+  | { type: 'member'; memberId: number };
 
 // ---------------------------------------------------------------------------
 // Reception
@@ -270,6 +290,8 @@ export interface MemberListItem {
   /** The membership that governs today, if any has started. */
   membership: MembershipSummary | null;
   isInside: boolean;
+  /** Has set a password in the app; false until the first activation code is used. */
+  activated: boolean;
 }
 
 export interface MembershipDetail {
@@ -313,11 +335,74 @@ export interface MemberDetail {
   memberships: MembershipDetail[];
   /** Append-only record of reception actions, newest first. */
   history: MembershipEventDto[];
+  activatedAt: string | null;
+  /** Expiry of an activation code that can still be used, if one was handed out. */
+  activationExpiresAt: string | null;
+  /** KVKK decisions, newest first. */
+  consents: ConsentDto[];
 }
 
 export interface SellMembershipRequest {
   planId: number;
   method: PaymentMethod;
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding: reception opens the account, the member activates it with a one-time code
+// ---------------------------------------------------------------------------
+
+export const ACTIVATION_CODE_LENGTH = 6;
+export const ACTIVATION_CODE_TTL_MINUTES = 15;
+/** Wrong guesses a code survives; after that reception has to hand out a new one. */
+export const ACTIVATION_MAX_ATTEMPTS = 5;
+export const PASSWORD_MIN_LENGTH = 8;
+
+export type ConsentKind = 'notice' | 'optional_data';
+
+export interface ConsentDto {
+  kind: ConsentKind;
+  version: string;
+  granted: boolean;
+  at: string;
+  staffName: string | null;
+}
+
+export interface NewMemberProfile {
+  birthYear: number | null;
+  gender: MemberGender | null;
+  heightCm: number | null;
+  weightKg: number | null;
+  goal: MemberGoal | null;
+}
+
+export interface CreateMemberRequest {
+  fullName: string;
+  phone: string;
+  /** Must equal KVKK_NOTICE_VERSION (shared/consent.ts): the text the member was shown. */
+  noticeVersion: string;
+  /** Notice acknowledged (required) and explicit consent for the optional profile fields. */
+  consents: { notice: true; optionalData: boolean };
+  /** Every field must be null unless consents.optionalData is true. */
+  profile: NewMemberProfile;
+  /** First package, sold in the same step; null to register without one. */
+  sale: SellMembershipRequest | null;
+}
+
+export interface ActivationCodeResponse {
+  /** Shown once; the server keeps only a hash. */
+  code: string;
+  expiresAt: string;
+}
+
+export interface CreateMemberResponse {
+  detail: MemberDetail;
+  activation: ActivationCodeResponse;
+}
+
+export interface ActivateRequest {
+  phone: string;
+  code: string;
+  password: string;
 }
 
 export interface ReceptionSummary {

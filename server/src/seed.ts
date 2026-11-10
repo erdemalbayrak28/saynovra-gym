@@ -7,6 +7,8 @@ import { seedCatalog } from './catalog.ts';
 import { loadConfig } from './config.ts';
 import { openDb, transaction, type Db } from './db.ts';
 import { DEMO_MEMBER_PASSWORD, DEMO_MEMBER_PHONE, DEMO_STAFF as STAFF } from './demo.ts';
+import { KVKK_NOTICE_VERSION } from '../../shared/consent.ts';
+import { registerMember } from './onboarding.ts';
 import { expiringMembers, listPlans, sellMembership } from './reception.ts';
 import { seedTrainingHistory } from './seed-training.ts';
 import { addDays, localDate, startOfLocalDay } from './time.ts';
@@ -56,6 +58,8 @@ const OWNER_ID = 1;
 const DESK_ID = 2;
 const OPENING_HOUR = 7;
 const RENEWALS_TODAY = 4;
+// Registered at the desk today but has not opened the app yet: shows the onboarding flow.
+const NEW_MEMBER = { name: 'Selin Arıkan', phone: '5550000999' };
 
 // mulberry32: tiny deterministic PRNG so every seed produces the same gym.
 function rng(seed: number): () => number {
@@ -182,17 +186,41 @@ async function main(): Promise<void> {
       addMembership(id, plan.name, daysLeft, status, 2 + Math.floor(random() * 4));
     }
 
+    // Everyone so far signed up at the desk with the KVKK notice and consent for the optional
+    // fields (they have height and weight on file), and has since set a password in the app.
+    db.prepare(
+      `INSERT INTO member_consents (member_id, kind, version, granted, created_at, created_by)
+       SELECT m.id, k.kind, ?, 1, m.created_at, ? FROM members m
+       CROSS JOIN (SELECT 'notice' AS kind UNION ALL SELECT 'optional_data') k
+       ORDER BY m.id, k.kind`,
+    ).run(KVKK_NOTICE_VERSION, deskId);
+    db.prepare('UPDATE members SET activated_at = created_at').run();
+
     const programIds = seedCatalog(db, now);
     const workouts = seedTrainingHistory(db, { memberId: 1, programId: programIds.get('hipertrofi-ust-alt') ?? 0, today });
     return { ...insertHistory(db, members, now, today, random), workouts };
   });
   const renewalsToday = sellTodaysRenewals(db, now, today, config.GYM_TIMEZONE, random);
+  // The code it gets expires in minutes; at the demo the desk hands out a fresh one.
+  await registerMember(
+    db,
+    {
+      fullName: NEW_MEMBER.name,
+      phone: NEW_MEMBER.phone,
+      noticeVersion: KVKK_NOTICE_VERSION,
+      consents: { notice: true, optionalData: false },
+      profile: { birthYear: null, gender: null, heightCm: null, weightKg: null, goal: null },
+      sale: { planId: listPlans(db).find((plan) => plan.name === 'Aylık')?.id ?? 1, method: 'card' },
+    },
+    { staffId: DESK_ID, now, today },
+  );
 
   db.close();
   console.log(
     JSON.stringify({
       seeded: config.DB_PATH,
-      members: PERSONAS.length + GENERATED_MEMBERS,
+      members: PERSONAS.length + GENERATED_MEMBERS + 1,
+      notActivated: NEW_MEMBER.phone,
       checkins: summary.checkins,
       insideNow: summary.insideNow,
       renewalsToday,

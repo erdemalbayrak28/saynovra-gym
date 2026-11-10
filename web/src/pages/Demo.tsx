@@ -12,6 +12,8 @@ const SCRIPT = [
   'Dondurmayı kaldır: dondurulan günler bitiş tarihine eklenir, kapı yeniden açılır.',
   'Mert Demir\'i ara (üyeliği dün bitti), 3 aylık paket sat: bugünkü ciro ve işlem geçmişi güncellenir.',
   'Salon sahibi PIN\'i ile girildiyse iptal düğmesi açıktır; gişe PIN\'inde kapalıdır.',
+  'Yeni üye: resepsiyonda "Yeni üye" ile ad, telefon, KVKK onayı ve paket gir; ekrana 6 haneli kod çıkar.',
+  'İkinci telefonda (ya da demo üyeden çıkış yapıp) "Kodla etkinleştir"e o numarayı, kodu ve yeni şifreyi gir: resepsiyonda kart "Etkin" olur, QR ile kapıdan geç.',
 ];
 
 export function DemoView({ session, onUnauthorized }: { session: StaffSession; onUnauthorized: () => void }) {

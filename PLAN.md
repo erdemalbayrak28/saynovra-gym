@@ -114,6 +114,7 @@ Zamanlar UTC ISO 8601 metin. Üyelik tarihleri İstanbul takvim günü (`YYYY-MM
 | 2 (sprint 2) | `exercises`, `programs`, `program_days`, `program_items`, `member_programs` (üye başına tek aktif program), `workouts` (üye başına tek aktif antrenman), `workout_sets`; `gate_code_uses` kaldırıldı (yerini sıra numarası aldı) |
 | 3 (sprint 3) | `spotter_posts`, `spot_requests`, `spot_messages` |
 | 4 (sprint 4) | `membership_events` (satış, dondurma, çözme, iptal; tetikleyicilerle yalnızca eklenebilir, güncellenemez ve silinemez), `memberships.modified_by` |
+| 5 (sprint 5) | `member_activations` (tek kullanımlık etkinleştirme kodu), `member_consents` (KVKK rızası, yalnızca eklenebilir), `members.activated_at`, `members.session_epoch` |
 
 Üyelik durum makinesi (tek fonksiyon, izin tablosu):
 
@@ -160,8 +161,77 @@ active ──süre biter──► expired        active | frozen ──iptal─�
 - [x] Örnek veri: üyeler resepsiyondan geçmiş gibi işlem geçmişiyle gelir, bugün birkaç yenileme satılmış olur
 - [ ] Gerçek kamerada AI form denemesi ve çekim provası (kurucu)
 
+### Sprint 5: yeni üye kaydı (bitti, 2026-11-10)
+
+Salona ilk kez gelen kişi resepsiyonda kaydedilir, KVKK rızası alınır, ilk paketi satılır ve aynı dakika içinde telefonundan uygulamaya girip kapıdan geçer. Hesabı her zaman resepsiyon açar; üye şifresini kendisi belirler, şifre görevlinin elinden geçmez.
+
+**Akış**
+
+1. Resepsiyon "Yeni üye": ad soyad, telefon (zorunlu); doğum yılı, cinsiyet, boy, kilo, hedef (isteğe bağlı).
+2. KVKK: aydınlatma metni okundu onayı zorunlu. İsteğe bağlı veriler (doğum yılı, cinsiyet, boy, kilo, hedef) yalnızca ayrı açık rıza verilirse kaydedilir; rıza yoksa sunucu bu alanları reddeder (400), sessizce atmaz.
+3. İlk paket (isteğe bağlı, mevcut satış kuralıyla aynı): paket ve ödeme türü. Hesap ve satış tek işlemde (transaction) yazılır; biri başarısızsa hiçbiri yazılmaz.
+4. Ekranda büyük harflerle 6 haneli etkinleştirme kodu ve geri sayım (15 dk). Kod yalnızca bu yanıtta bir kez döner, sunucuda scrypt ile özetlenmiş saklanır, loglanmaz.
+5. Üye uygulamada "İlk kez mi giriyorsun?": telefon + kod + yeni şifre (iki kez, en az 8 karakter). Doğruysa oturum açılır, QR anahtarı gelir, ana sayfa üyelik kartıyla açılır.
+6. Resepsiyon ekranında üye kartı canlı olayla "Uygulamaya girdi" olur.
+
+**Kurallar**
+
+| Kural | Değer |
+|---|---|
+| Kod | 6 hane, `crypto.randomInt`, 15 dk geçerli, tek kullanımlık |
+| Yanlış deneme | Aynı koda 5 yanlış denemede kod geçersizleşir; resepsiyon yenisini verir |
+| Kod yenileme | Üye kartında "Etkinleştirme kodu ver": eski kod anında geçersiz. Etkin hesapta da çalışır ve **şifre sıfırlama** yerine geçer (üye şifresini unutursa resepsiyona gelir); yeni şifre belirlenince eski oturumlar düşer |
+| Etkinleşmemiş hesap | Şifre alanı kimsenin bilmediği rastgele bir özettir; normal giriş her zaman "Telefon veya şifre hatalı" alır, kayıtlı ama etkinleşmemiş numara dışarıdan ayırt edilemez. Giriş ekranı hatadan sonra "Kodla etkinleştir" yolunu öne çıkarır. Kapı QR'ı üretilemez çünkü anahtar etkinleşmeden telefona gitmez |
+| Telefon | Benzersiz; aynı numarayla ikinci kayıt 409 ve "Bu numarayla kayıtlı üye var" + mevcut üyeyi açma bağlantısı |
+| Açık kayıt ucu | `POST /auth/member/register` kaldırılır (kimlik doğrulamasız, hiçbir ekran kullanmıyor). Hesap yalnızca personel token'ıyla açılır |
+| TCKN | Toplanmaz |
+| Log | Yalnızca üye ve personel numarası; telefon, kod ve şifre hiçbir zaman |
+
+**Oturum düşürme:** `members.session_epoch` tamsayısı JWT'ye `ep` olarak girer; şifre sıfırlanınca artar ve eski token'lar 401 alır. Sunucuda oturum tutulmaz, yalnızca üye satırındaki sayı karşılaştırılır.
+
+**Sunucu**
+
+- Göç 5: `member_activations` (üye, kod özeti, son geçerlilik, yanlış deneme sayısı, kullanıldı/iptal zamanı, veren personel; üye başına tek açık kod, kısmi `UNIQUE` index), `member_consents` (üye, tür `notice` | `optional_data`, metin sürümü, verildi/geri alındı, zaman, personel; tetikleyicilerle yalnızca eklenebilir), `members.activated_at`, `members.session_epoch`. Mevcut üyeler `activated_at = created_at` ile doldurulur.
+- Etkinleşmemiş üyenin `password_hash` alanı rastgele 32 baytın özetidir (sütun `NOT NULL`, bilinen bir şifreye karşılık gelmez).
+- `POST /staff/members`: kayıt + rıza + isteğe bağlı ilk satış, yanıtta üye detayı ve kod.
+- `POST /staff/members/:id/activation`: yeni kod.
+- `POST /auth/member/activate`: telefon + kod + şifre → `MemberLoginResponse`. Bilinmeyen telefon ve yanlış kod aynı hata ve aynı süre.
+- Canlı olay `member` (kayıt, etkinleşme): resepsiyon listesi ve kartı yenilenir.
+- `shared/consent.ts`: aydınlatma ve açık rıza metni, sürüm sabiti (`KVKK_NOTICE_VERSION`). Metin değişirse sürüm artar, eski rızalar eski sürümle kalır.
+
+**Web (resepsiyon)**
+
+- Arama kutusunun yanında "Yeni üye" düğmesi; adımlı panel: Bilgiler → KVKK → Paket → Kod.
+- Telefon yazılırken mevcut üye eşleşirse uyarı ve "Üyeyi aç".
+- Üye kartında "Uygulamaya girmedi" etiketi, "Etkinleştirme kodu ver" düğmesi, rıza geçmişi.
+- İkili görünüm prova akışına "Yeni üye kaydet, telefondan etkinleştir, kapıdan geç" adımı.
+
+**Mobil**
+
+- Giriş ekranında "İlk kez mi giriyorsun? Kodla etkinleştir" bağlantısı → etkinleştirme ekranı (telefon, 6 haneli kod alanı, şifre ve tekrarı).
+- Profilde "KVKK aydınlatma metni" ve verilen rızalar (salt okunur).
+
+**Testler (88 → 105)**
+
+- Kod: süre dolması, 5 yanlış denemede geçersizleşme, tek kullanım, yenisi verilince eskisinin ölmesi, bilinmeyen telefonla aynı hata.
+- Kayıt: rızasız isteğe bağlı veri 400, tekrar telefon 409, satış hatasında hesabın da yazılmaması, yalnızca personel (üye token'ı 403, token'sız 401), `/auth/member/register` 404.
+- Rıza tablosu güncellenemez ve silinemez.
+- Etkinleşmemiş hesapla giriş reddi; şifre sıfırlamada eski token 401.
+- Uçtan uca: kayıt → etkinleştirme → `/me` → QR kodu kapıdan geçer.
+
+**Örnek veri:** mevcut üyeler etkin; bir kurgu üye "kayıt oldu, uygulamaya girmedi" durumunda gelir.
+
+**Kapsam dışı:** SMS ile kod gönderme, üyenin uygulamadan kendi kendine şifre sıfırlaması, fotoğraf, rıza geri alma ekranı (tabloda tür var, ekranı sonraki aşamada), sağlık beyanı formu.
+
+- [x] Göç 5, `shared/consent.ts`, sözleşme tipleri
+- [x] Sunucu: kayıt, kod verme, etkinleştirme, oturum düşürme, açık kayıt ucunun kaldırılması + testler
+- [x] Web: Yeni üye paneli, üye kartında kod ve etiket, prova adımı
+- [x] Mobil: etkinleştirme ekranı, profilde KVKK
+- [x] Örnek veri, README, CHANGELOG
+- [ ] Gerçek telefonda kayıttan kapıya deneme (kurucu)
+
 ---
 
 ## 7. Kapsam dışı
 
-Gerçek ödeme, mağaza yayını, sunucudan push bildirimi, grup dersi rezervasyonu, eğitmen hesabı, çoklu şube, internete açık sunucu, telefonda form analizi, üyenin kendi programını sıfırdan kurması (kurucu hazır program seçimini istedi; eğitmenin üyeye program ataması sonraki aşamada), yeni üye kayıt ekranı (sunucuda kayıt ucu var; resepsiyon ve uygulama ekranı sonraki aşamada), iade ve kısmi ödeme, dondurma hakkı bitince kendiliğinden çözme.
+Gerçek ödeme, mağaza yayını, sunucudan push bildirimi, grup dersi rezervasyonu, eğitmen hesabı, çoklu şube, internete açık sunucu, telefonda form analizi, üyenin kendi programını sıfırdan kurması (kurucu hazır program seçimini istedi; eğitmenin üyeye program ataması sonraki aşamada), iade ve kısmi ödeme, dondurma hakkı bitince kendiliğinden çözme.

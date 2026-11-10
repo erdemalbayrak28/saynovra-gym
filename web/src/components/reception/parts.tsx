@@ -68,6 +68,7 @@ export function MemberRow({ member, selected, onSelect }: { member: MemberListIt
         <span className="flex items-center gap-2">
           <span className="truncate font-semibold text-text">{member.fullName}</span>
           {member.isInside && <span className="size-1.5 shrink-0 rounded-full bg-ok" title="Salonda" aria-label="Salonda" />}
+          {!member.activated && <span className="shrink-0 rounded-full bg-info/10 px-1.5 text-[10px] font-semibold text-info" title="Uygulamaya girmedi">Yeni</span>}
         </span>
         <span className="block truncate font-mono text-xs text-muted">{phone(member.phone)}</span>
       </span>
