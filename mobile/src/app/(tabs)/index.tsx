@@ -82,15 +82,17 @@ function MembershipCard({ membership }: { membership: MembershipSummary | null }
     );
   }
   const active = membership.status === 'active';
+  const frozen = membership.status === 'frozen';
+  const tone = active
+    ? { color: colors.lime, background: colors.limeSoft }
+    : frozen
+      ? { color: colors.info, background: colors.infoSoft }
+      : { color: colors.bad, background: colors.badSoft };
   return (
-    <Card style={active ? styles.membershipActive : undefined}>
+    <Card style={active ? styles.membershipActive : frozen ? styles.membershipFrozen : undefined}>
       <View style={styles.rowBetween}>
         <Label>{`${membership.planName} üyelik`}</Label>
-        <Pill
-          text={MEMBERSHIP_STATUS_TEXT[membership.status]}
-          color={active ? colors.lime : colors.bad}
-          background={active ? colors.limeSoft : colors.badSoft}
-        />
+        <Pill text={MEMBERSHIP_STATUS_TEXT[membership.status]} color={tone.color} background={tone.background} />
       </View>
       <View style={styles.daysRow}>
         <Text style={styles.daysNumber}>{membership.daysLeft}</Text>
@@ -100,6 +102,11 @@ function MembershipCard({ membership }: { membership: MembershipSummary | null }
         <CalendarDays size={16} color={colors.muted} />
         <Body>{`Bitiş: ${longDate(membership.endsOn)}`}</Body>
       </View>
+      {frozen ? (
+        <Body style={{ color: colors.info }}>
+          Üyeliğin dondurulmuş, kapı girişe izin vermez. Resepsiyonda dondurma kaldırılınca dondurulan günler bitiş tarihine eklenir.
+        </Body>
+      ) : null}
     </Card>
   );
 }
@@ -218,6 +225,7 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
   inline: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   membershipActive: { borderColor: 'rgba(200,240,49,0.35)' },
+  membershipFrozen: { borderColor: 'rgba(77,184,255,0.35)' },
   daysRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },
   daysNumber: { fontFamily: fonts.display, fontSize: 56, lineHeight: 60, color: colors.lime, letterSpacing: -1.5 },
   occupancyNumber: { fontFamily: fonts.display, fontSize: 36, lineHeight: 40, color: colors.text },

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-09 · Sprint 4: resepsiyon, AI form, ikili görünüm
+
+- Resepsiyon (web, "Resepsiyon" sekmesi): ad, soyad veya telefonla üye arama; "sahin" yazınca "Şahin", "irmak" yazınca "Irmak" da bulunur, listeler Türkçe alfabe sırasında. Arama boşken "7 gün içinde bitenler" listesi (yenileme satılmışlar hariç).
+- Paket satışı: süren üyeliği olan üyede yeni paket o üyeliğin bitiminden sonra başlar, yoksa bugün. Dondurulmuş üyeliğe satış yapılmaz. Ödeme türü (nakit, kart, havale) kaydedilir; gerçek ödeme alınmaz.
+- Dondurma: paketin dondurma hakkı kadar (Aylık pakette yok). Kaldırınca dondurulan günler bitiş tarihine eklenir, önceden satılan yenileme de aynı gün kadar kayar; hak bittiyse fazlası eklenmez.
+- İptal yalnızca salon sahibi PIN'iyle; gişe hesabında düğme kapalı, sunucu da 403 döner.
+- Bugünkü ciro, satış adedi, ödeme türü dağılımı, aktif ve dondurulmuş üye, bu hafta bitecekler.
+- İşlem geçmişi: her satış, dondurma, çözme ve iptal kimin yaptığıyla `membership_events` tablosuna yazılır; tetikleyiciler kaydın güncellenmesini ve silinmesini engeller. Üyeliklere `modified_by` eklendi (göç 4).
+- Resepsiyondaki değişiklik canlı olayla anında üyenin telefonuna düşer: üyelik kartı "Dondurulmuş" olur (mavi, açıklamalı), kapı girişte "Üyelik dondurulmuş" der.
+- AI form analizi (web, "AI Form" sekmesi): squat ve bench press, laptop kamerası ya da telefonla çekilmiş video dosyası. İskeleti Google'ın MediaPipe Pose modeli bu bilgisayarda çıkarır (GPU, kare başına yaklaşık 13 ms); görüntü kaydedilmez, gönderilmez. Ekranda iskelet ve ölçülen eklem açısı, tekrar sayısı, yarım tekrar, en dip açı, kaldırma süresi ve ilk tekrara göre yavaşlama; squat'ta gövde eğimi, bench'te üstte kilitleme uyarısı. Kurallar `shared/pose.ts` içinde, sabit eşiklerle.
+- İkili görünüm: kapı ve resepsiyon yan yana, katlanır "Prova akışı" adımlarıyla. Web artık üst menülü (Kapı, Resepsiyon, AI Form, İkili görünüm) ve tüm paneller tek canlı bağlantıyı paylaşıyor.
+- MediaPipe paketi 1.1.1 sürümüne sabitlendi (en yeni sürüm 6 günlüktü); çalışma dosyaları `npm run dev` öncesinde `web/public/mediapipe` altına kopyalanır. Model ilk açılışta Google'dan iner; dosya `web/public/mediapipe/` içine konursa internetsiz çalışır.
+- Örnek veri: üyeler resepsiyondan geçmiş gibi satış, dondurma ve iptal geçmişiyle gelir; kayıt tarihi ilk paketin tarihi oldu; bugün birkaç yenileme satılmış olur.
+- Testler 67'den 88'e çıktı: resepsiyon kuralları ve API'si (11), form analizi geometrisi ve tekrar sayımı (10).
+
 ## 2026-11-09 · Sprint 3: salon zekâsı ve buddy
 
 - Buddy radarı (yeni "Buddy" sekmesi): salondaki üyeler spotter ilanı açar (kas grubu, salondaki yer, kısa not), diğerleri spot isteği gönderir, ilan sahibi kabul eder ya da reddeder, eşleşince iki tarafın ilanı kapanır ve kısa mesajlaşma açılır (hazır cevaplar). Biri kapıdan çıkınca ilan kapanır, eşleşme ve sohbet biter. Radar salon dışından görünmez; isimler "Burak B." biçiminde.

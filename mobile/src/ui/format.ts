@@ -1,5 +1,3 @@
-import type { MembershipStatus } from '../../../shared/contract';
-
 const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
 /** "2026-12-21" -> "21 Aralık 2026". Calendar dates carry no time zone, so no Date parsing. */
@@ -50,12 +48,8 @@ export function initials(fullName: string): string {
   return (first + last).toLocaleUpperCase('tr-TR');
 }
 
-export const MEMBERSHIP_STATUS_TEXT: Record<MembershipStatus, string> = {
-  active: 'Aktif',
-  frozen: 'Dondurulmuş',
-  expired: 'Süresi doldu',
-  cancelled: 'İptal edildi',
-};
+// One wording for the phone, the gate screen and reception.
+export { MEMBERSHIP_STATUS_TEXT } from '../../../shared/contract';
 
 export function formatPhone(phone: string): string {
   return phone.length === 10 ? `0${phone.slice(0, 3)} ${phone.slice(3, 6)} ${phone.slice(6, 8)} ${phone.slice(8)}` : phone;

@@ -98,9 +98,9 @@ Sunucu sırayla kontrol eder, ilk başarısız adımda reddeder ve nedeni kayded
 | Antrenman | İşaretlenen set listesi | Kurucunun isteği: üye işaretlemez, programa göre çalışır. Hazır program kütüphanesinden seçim (5 program); uygulama sıradaki günü, hareketi, seti, kiloyu ve tekrarı söyler. Üye "Seti tamamladım"a basar, dinlenme sayacı kendiliğinden başlar, bitince titreşir ve sonraki seti açar. Farklı kilo/tekrar artı-eksiyle düzeltilir; isteğe bağlı "nasıldı?" (RPE). Yarım kalan antrenman kaldığı yerden sürer. Özet: süre, set, hacim, rekorlar. Gelişim: haftalık hacim, hareket başına en yüksek kilo grafiği |
 | Buddy / spotter radarı | Sabit liste | Radar yalnızca salondaki üyelere açık; isimler "Burak B." biçiminde. İlan (kas grubu, sabit konum listesi, 140 karakter not), istek, kabul/ret/vazgeç, eşleşince iki tarafın ilanı kapanır, kısa mesajlaşma (hazır cevaplar). Biri çıkınca ilan kapanır, eşleşme ve sohbet biter. İstek durumları tek bir durum makinesinde (`server/src/domain/spot.ts`) |
 | Salon içi akış | Sabit | Kapı ekranında ilan ve eşleşme olaylarından canlı akış |
-| AI form analizi | Animasyon | MediaPipe Pose: iskelet, dirsek/diz açısı, tekrar sayımı, hareket aralığı; laptop kamerasında |
-| İkili görünüm | Var | `web` demo sayfası: kapı + resepsiyon yan yana |
-| Resepsiyon | Yok | Üye arama, paket satışı, dondurma, iptal, günlük ciro |
+| AI form analizi | Animasyon | Web "AI Form" sayfası, laptop kamerası ya da video dosyası. İskeleti MediaPipe Pose Landmarker (Google'ın sinir ağı modeli) tarayıcıda çıkarır; görüntü kaydedilmez, gönderilmez. Üstüne kurallar (`shared/pose.ts`): kameraya dönük tarafın diz (squat) ya da dirsek (bench) açısı, tekrar sayımı durum makinesiyle (üstte, iniyor, dipte), squat'ta 100°, bench'te 95° altına inmeyen tekrar "yarım" sayılır, squat'ta gövde dikeyden 50° fazla eğilirse uyarı, bench'te üstte 165° kilitleme, yavaşlama ilk tekrara göre kaldırma süresinden. Taslaktaki "bar hızı (m/s)" yok: kamerayla ölçeksiz metre ölçülemez, yerine süre ve yüzde yavaşlama var |
+| İkili görünüm | Var | Web "İkili görünüm" sayfası: kapı ve resepsiyon yan yana, tek canlı bağlantı; katlanır "Prova akışı" adımları |
+| Resepsiyon | Yok | Web "Resepsiyon" sayfası (`server/src/reception.ts`): ad veya telefonla arama (Türkçe harfsiz yazınca da bulur), "7 gün içinde bitenler" listesi, paket satışı (süren üyeliğin bitiminden sonra başlar, yoksa bugün), dondurma (paketin hakkı kadar; kaldırınca dondurulan günler bitişe eklenir, önceden satılan yenileme de kayar), iptal (yalnızca salon sahibi), bugünkü ciro ve ödeme türü dağılımı. Her işlem kimin yaptığıyla değiştirilemez geçmişe yazılır ve üyenin telefonuna anında düşer |
 
 ---
 
@@ -113,6 +113,7 @@ Zamanlar UTC ISO 8601 metin. Üyelik tarihleri İstanbul takvim günü (`YYYY-MM
 | 1 (sprint 1) | `staff`, `members`, `plans`, `memberships`, `payments`, `checkins`, `gate_code_uses` |
 | 2 (sprint 2) | `exercises`, `programs`, `program_days`, `program_items`, `member_programs` (üye başına tek aktif program), `workouts` (üye başına tek aktif antrenman), `workout_sets`; `gate_code_uses` kaldırıldı (yerini sıra numarası aldı) |
 | 3 (sprint 3) | `spotter_posts`, `spot_requests`, `spot_messages` |
+| 4 (sprint 4) | `membership_events` (satış, dondurma, çözme, iptal; tetikleyicilerle yalnızca eklenebilir, güncellenemez ve silinemez), `memberships.modified_by` |
 
 Üyelik durum makinesi (tek fonksiyon, izin tablosu):
 
@@ -151,13 +152,16 @@ active ──süre biter──► expired        active | frozen ──iptal─�
 
 **Demo modu** (`server/.env`: `DEMO_SIMULATION=true`, `DEMO_MIN_INSIDE=12`): yalnızca prova ve çekim içindir, varsayılan kapalıdır. Kurgu üyeler doluluğu o saatin geçmiş ortalamasına doğru götürür ve salonda en az 12 kişi tutar. Taslaktaki Burak, Kerem, Caner ve Emre spotter ilanı açar, isteklere birkaç saniyede cevap verir, sohbette birkaç kez yazar. Demo üye ilan açarsa 15 saniye sonra biri istek gönderir. Demo üyeyi hiçbir zaman hareket ettirmez. Bu kurgu davranışı yapan üyeler (5550000002-05), ikinci bir telefonla giriş yapılsa da otomatik davranmaya devam eder.
 
-### Sprint 4: resepsiyon, AI form, demo
-- [ ] Resepsiyon: üyeler, satış, dondurma, iptal, günlük özet
-- [ ] AI form analizi (bench press, squat)
-- [ ] İkili demo sayfası, çekim provası
+### Sprint 4: resepsiyon, AI form, demo (bitti, 2026-11-09)
+- [x] Resepsiyon: arama, bitenler listesi, satış ve yenileme, dondurma ve çözme, iptal (salon sahibi), günlük ciro, değiştirilemez işlem geçmişi (göç 4)
+- [x] Üyelik değişikliği canlı olay (`membership`): telefon kartı ve kapı aynı anda güncellenir
+- [x] AI form analizi (squat, bench press): MediaPipe Pose tarayıcıda, kamera veya video dosyası, kurallar `shared/pose.ts` içinde ve testli
+- [x] Web: üst menü (Kapı, Resepsiyon, AI Form, İkili görünüm), tek canlı bağlantı, ikili görünüm ve prova akışı
+- [x] Örnek veri: üyeler resepsiyondan geçmiş gibi işlem geçmişiyle gelir, bugün birkaç yenileme satılmış olur
+- [ ] Gerçek kamerada AI form denemesi ve çekim provası (kurucu)
 
 ---
 
 ## 7. Kapsam dışı
 
-Gerçek ödeme, mağaza yayını, sunucudan push bildirimi, grup dersi rezervasyonu, eğitmen hesabı, çoklu şube, internete açık sunucu, telefonda form analizi, üyenin kendi programını sıfırdan kurması (kurucu hazır program seçimini istedi; eğitmenin üyeye program ataması sonraki aşamada).
+Gerçek ödeme, mağaza yayını, sunucudan push bildirimi, grup dersi rezervasyonu, eğitmen hesabı, çoklu şube, internete açık sunucu, telefonda form analizi, üyenin kendi programını sıfırdan kurması (kurucu hazır program seçimini istedi; eğitmenin üyeye program ataması sonraki aşamada), yeni üye kayıt ekranı (sunucuda kayıt ucu var; resepsiyon ve uygulama ekranı sonraki aşamada), iade ve kısmi ödeme, dondurma hakkı bitince kendiliğinden çözme.

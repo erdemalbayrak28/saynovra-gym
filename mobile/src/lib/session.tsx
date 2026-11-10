@@ -48,7 +48,7 @@ interface SessionValue {
 }
 
 type LiveListener = (event: LiveEvent) => void;
-const LIVE_TYPES = new Set<LiveEvent['type']>(['checkin', 'radar', 'spot_request', 'spot_message', 'floor']);
+const LIVE_TYPES = new Set<LiveEvent['type']>(['checkin', 'radar', 'spot_request', 'spot_message', 'floor', 'membership']);
 
 const SessionContext = createContext<SessionValue | null>(null);
 
@@ -194,6 +194,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (event.type === 'spot_request' && event.request.status === 'pending' && event.request.to.id === memberId) setBuddyAlert(true);
         if (event.type === 'spot_request' && event.request.status === 'accepted' && event.request.from.id === memberId) setBuddyAlert(true);
         if (event.type === 'spot_message' && event.message.senderId !== memberId) setBuddyAlert(true);
+        // Reception sold, froze or cancelled a package: the membership card and the QR screen follow at once.
+        if (event.type === 'membership' && event.memberId === memberId) void refreshMe();
         if (event.type !== 'checkin') return;
 
         const checkin = event.checkin;

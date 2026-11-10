@@ -7,8 +7,9 @@ import { seedCatalog } from './catalog.ts';
 import { loadConfig } from './config.ts';
 import { openDb, transaction, type Db } from './db.ts';
 import { DEMO_MEMBER_PASSWORD, DEMO_MEMBER_PHONE, DEMO_STAFF as STAFF } from './demo.ts';
+import { expiringMembers, listPlans, sellMembership } from './reception.ts';
 import { seedTrainingHistory } from './seed-training.ts';
-import { addDays, localDate } from './time.ts';
+import { addDays, localDate, startOfLocalDay } from './time.ts';
 
 const PLANS = [
   { name: 'Aylık', days: 30, priceTl: 1500, freezeDays: 0 },
@@ -50,6 +51,11 @@ const HISTORY_DAYS = 28;
 // Türkiye has stayed on UTC+3 all year since 2016; good enough for fabricating history.
 const UTC_OFFSET_HOURS = 3;
 const KURUS_PER_TL = 100;
+// Staff rows are inserted in DEMO_STAFF order: the owner first, then the desk.
+const OWNER_ID = 1;
+const DESK_ID = 2;
+const OPENING_HOUR = 7;
+const RENEWALS_TODAY = 4;
 
 // mulberry32: tiny deterministic PRNG so every seed produces the same gym.
 function rng(seed: number): () => number {
@@ -99,7 +105,7 @@ async function main(): Promise<void> {
         s.name, s.role, staffHashes[i] ?? '', stamp, stamp,
       );
     });
-    const deskId = 2;
+    const deskId = DESK_ID;
 
     const planIds = new Map<PlanName, number>();
     for (const plan of PLANS) {
@@ -129,18 +135,29 @@ async function main(): Promise<void> {
       const endsOn = addDays(today, daysLeft);
       const startsOn = addDays(endsOn, -plan.days);
       const createdAt = `${startsOn}T07:00:00.000Z`;
+      const frozenFrom = status === 'frozen' ? addDays(today, -5) : null;
+      // Cancellations are the owner's; they happen some days into the membership.
+      const cancelledAt = status === 'cancelled' ? `${[addDays(startsOn, 10), today].sort()[0]}T09:00:00.000Z` : null;
       const result = db
         .prepare(
-          `INSERT INTO memberships (member_id, plan_id, starts_on, ends_on, status, frozen_from, price_kurus, created_at, modified_at, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO memberships (member_id, plan_id, starts_on, ends_on, status, frozen_from, price_kurus, created_at, modified_at, created_by, modified_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
-          memberId, planIds.get(plan.name) ?? 0, startsOn, endsOn, status, status === 'frozen' ? addDays(today, -5) : null,
-          plan.priceTl * KURUS_PER_TL, createdAt, createdAt, deskId,
+          memberId, planIds.get(plan.name) ?? 0, startsOn, endsOn, status, frozenFrom, plan.priceTl * KURUS_PER_TL,
+          createdAt, cancelledAt ?? createdAt, deskId, cancelledAt ? OWNER_ID : deskId,
         );
-      db.prepare('INSERT INTO payments (membership_id, amount_kurus, method, created_at, created_by) VALUES (?, ?, ?, ?, ?)').run(
-        Number(result.lastInsertRowid), plan.priceTl * KURUS_PER_TL, pick(['card', 'card', 'cash', 'transfer'] as const), createdAt, deskId,
-      );
+      const membershipId = Number(result.lastInsertRowid);
+      // A member joined when their first package was sold, not when the demo database was built.
+      db.prepare('UPDATE members SET created_at = MIN(created_at, ?), modified_at = MIN(modified_at, ?) WHERE id = ?').run(createdAt, createdAt, memberId);
+      const payment = db
+        .prepare('INSERT INTO payments (membership_id, amount_kurus, method, created_at, created_by) VALUES (?, ?, ?, ?, ?)')
+        .run(membershipId, plan.priceTl * KURUS_PER_TL, pick(['card', 'card', 'cash', 'transfer'] as const), createdAt, deskId);
+      // The same history reception writes, so seeded members look like they went through the desk.
+      const event = db.prepare('INSERT INTO membership_events (membership_id, type, payment_id, created_at, created_by) VALUES (?, ?, ?, ?, ?)');
+      event.run(membershipId, 'sale', Number(payment.lastInsertRowid), createdAt, deskId);
+      if (frozenFrom) event.run(membershipId, 'freeze', null, `${frozenFrom}T08:00:00.000Z`, deskId);
+      if (cancelledAt) event.run(membershipId, 'cancel', null, cancelledAt, OWNER_ID);
       members.push({ id: memberId, plan, startsOn, endsOn, status, visitsPerWeek });
     };
 
@@ -169,6 +186,7 @@ async function main(): Promise<void> {
     const workouts = seedTrainingHistory(db, { memberId: 1, programId: programIds.get('hipertrofi-ust-alt') ?? 0, today });
     return { ...insertHistory(db, members, now, today, random), workouts };
   });
+  const renewalsToday = sellTodaysRenewals(db, now, today, config.GYM_TIMEZONE, random);
 
   db.close();
   console.log(
@@ -177,6 +195,7 @@ async function main(): Promise<void> {
       members: PERSONAS.length + GENERATED_MEMBERS,
       checkins: summary.checkins,
       insideNow: summary.insideNow,
+      renewalsToday,
       demoWorkouts: summary.workouts,
       demoMemberPhone: DEMO_MEMBER_PHONE,
       note: 'Demo şifresi ve PIN\'ler README.md içinde',
@@ -231,6 +250,24 @@ function insertHistory(db: Db, members: SeedMember[], now: Date, today: string, 
     }
   }
   return { checkins, insideNow };
+}
+
+/**
+ * A few members whose memberships end this week renewed earlier today, through the same code the
+ * reception desk uses, so the day's takings and the call list look like a working day.
+ */
+function sellTodaysRenewals(db: Db, now: Date, today: string, timeZone: string, random: () => number): number {
+  const opening = new Date(new Date(startOfLocalDay(now, timeZone)).getTime() + OPENING_HOUR * 60 * 60 * 1000);
+  if (now <= opening) return 0;
+  const plans = new Map(listPlans(db).map((plan) => [plan.name, plan.id]));
+  const candidates = expiringMembers(db, today, now).slice(0, RENEWALS_TODAY);
+  candidates.forEach((member) => {
+    const planId = plans.get(member.membership?.planName ?? '');
+    if (!planId) return;
+    const soldAt = new Date(opening.getTime() + random() * (now.getTime() - opening.getTime()));
+    sellMembership(db, member.id, { planId, method: random() < 0.7 ? 'card' : 'cash' }, { staffId: DESK_ID, now: soldAt, today });
+  });
+  return candidates.length;
 }
 
 main().catch((err: unknown) => {

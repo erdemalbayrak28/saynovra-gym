@@ -225,7 +225,111 @@ export type LiveEvent =
   | { type: 'spot_request'; request: SpotRequestDto }
   | { type: 'spot_message'; message: SpotMessageDto }
   /** Gym floor feed for staff screens. */
-  | { type: 'floor'; event: FloorEvent };
+  | { type: 'floor'; event: FloorEvent }
+  /** Reception changed a member's membership; sent to staff screens and to that member's phone. */
+  | { type: 'membership'; memberId: number };
+
+// ---------------------------------------------------------------------------
+// Reception
+// ---------------------------------------------------------------------------
+
+export type PaymentMethod = 'cash' | 'card' | 'transfer';
+export type MembershipEventType = 'sale' | 'freeze' | 'unfreeze' | 'cancel';
+
+export const PAYMENT_METHOD_TEXT: Record<PaymentMethod, string> = {
+  cash: 'Nakit',
+  card: 'Kart',
+  transfer: 'Havale',
+};
+
+export const MEMBERSHIP_STATUS_TEXT: Record<MembershipStatus, string> = {
+  active: 'Aktif',
+  frozen: 'Dondurulmuş',
+  expired: 'Süresi dolmuş',
+  cancelled: 'İptal edildi',
+};
+
+/** Searches need this many characters; shorter input lists memberships that end soon instead. */
+export const MEMBER_SEARCH_MIN = 2;
+/** "Ends soon" window for the reception list and summary, in days. */
+export const EXPIRING_WITHIN_DAYS = 7;
+
+export interface PlanDto {
+  id: number;
+  name: string;
+  durationDays: number;
+  priceKurus: number;
+  freezeDaysAllowed: number;
+}
+
+export interface MemberListItem {
+  id: number;
+  fullName: string;
+  phone: string;
+  initials: string;
+  /** The membership that governs today, if any has started. */
+  membership: MembershipSummary | null;
+  isInside: boolean;
+}
+
+export interface MembershipDetail {
+  id: number;
+  planName: string;
+  /** Effective status: an active membership past its last day reads as expired. */
+  status: MembershipStatus;
+  startsOn: string;
+  endsOn: string;
+  daysLeft: number;
+  priceKurus: number;
+  freezeDaysAllowed: number;
+  freezeDaysUsed: number;
+  frozenFrom: string | null;
+  /** Sold in advance: starts after today. */
+  upcoming: boolean;
+}
+
+export interface MembershipEventDto {
+  id: number;
+  membershipId: number;
+  type: MembershipEventType;
+  at: string;
+  planName: string;
+  staffName: string;
+  /** Days credited back on unfreeze. */
+  days: number | null;
+  amountKurus: number | null;
+  method: PaymentMethod | null;
+}
+
+export interface MemberDetail {
+  member: MemberListItem;
+  birthYear: number | null;
+  joinedAt: string;
+  lastVisitAt: string | null;
+  visitsLast30Days: number;
+  /** Same as member.membership, with the fields reception acts on. */
+  current: MembershipDetail | null;
+  /** Newest first, including upcoming, expired and cancelled ones. */
+  memberships: MembershipDetail[];
+  /** Append-only record of reception actions, newest first. */
+  history: MembershipEventDto[];
+}
+
+export interface SellMembershipRequest {
+  planId: number;
+  method: PaymentMethod;
+}
+
+export interface ReceptionSummary {
+  todayRevenueKurus: number;
+  todaySales: number;
+  /** Today's takings per payment method, in kuruş. */
+  byMethod: Record<PaymentMethod, number>;
+  activeMembers: number;
+  frozenMembers: number;
+  /** Active memberships ending within EXPIRING_WITHIN_DAYS with no renewal sold. */
+  expiringSoon: number;
+}
 
 // ---------------------------------------------------------------------------
 // Gym floor: occupancy and buddy radar

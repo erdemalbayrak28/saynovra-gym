@@ -2,7 +2,12 @@ import type {
   CheckinDto,
   FloorEvent,
   GateScanResponse,
+  MemberDetail,
+  MemberListItem,
+  PlanDto,
   Problem,
+  ReceptionSummary,
+  SellMembershipRequest,
   StaffLoginResponse,
   StaffSummary,
 } from '../../../shared/contract';
@@ -53,4 +58,14 @@ export const api = {
   checkins: (token: string, limit = 30) => request<CheckinDto[]>(`/staff/checkins?limit=${limit}`, { token }),
   summary: (token: string) => request<StaffSummary>('/staff/summary', { token }),
   floor: (token: string) => request<FloorEvent[]>('/staff/floor', { token }),
+
+  plans: (token: string) => request<PlanDto[]>('/staff/plans', { token }),
+  receptionSummary: (token: string) => request<ReceptionSummary>('/staff/reception/summary', { token }),
+  searchMembers: (token: string, query: string) => request<MemberListItem[]>(`/staff/members?q=${encodeURIComponent(query)}`, { token }),
+  expiringMembers: (token: string) => request<MemberListItem[]>('/staff/members/expiring', { token }),
+  member: (token: string, id: number) => request<MemberDetail>(`/staff/members/${id}`, { token }),
+  sell: (token: string, memberId: number, body: SellMembershipRequest) =>
+    request<MemberDetail>(`/staff/members/${memberId}/memberships`, { method: 'POST', body, token }),
+  membershipAction: (token: string, membershipId: number, action: 'freeze' | 'unfreeze' | 'cancel') =>
+    request<MemberDetail>(`/staff/memberships/${membershipId}/${action}`, { method: 'POST', token }),
 };

@@ -5,10 +5,21 @@ import { MIGRATIONS } from './migrations.ts';
 
 export type Db = DatabaseSync;
 
+const TURKISH_LETTERS: Record<string, string> = { ı: 'i', ş: 's', ğ: 'g', ü: 'u', ö: 'o', ç: 'c' };
+
+/**
+ * Lowercase with Turkish rules, then Turkish letters to their plain forms, so a search for
+ * "sahin" or "IŞIK" finds "Şahin" and "Işık". SQLite's own lower() and LIKE only fold ASCII.
+ */
+export function searchFold(text: string): string {
+  return text.toLocaleLowerCase('tr-TR').replace(/[ışğüöç]/g, (char) => TURKISH_LETTERS[char] ?? char);
+}
+
 export function openDb(path: string): Db {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000;');
+  db.function('search_fold', { deterministic: true }, (value) => (typeof value === 'string' ? searchFold(value) : value));
   migrate(db);
   return db;
 }

@@ -222,4 +222,25 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX idx_spot_messages_request ON spot_messages(request_id, id);
   `,
+
+  // 4: reception. Every membership change is written to an append-only history.
+  `
+  CREATE TABLE membership_events (
+    id            INTEGER PRIMARY KEY,
+    membership_id INTEGER NOT NULL REFERENCES memberships(id),
+    type          TEXT NOT NULL CHECK (type IN ('sale', 'freeze', 'unfreeze', 'cancel')),
+    days          INTEGER CHECK (days IS NULL OR days >= 0),
+    payment_id    INTEGER REFERENCES payments(id),
+    created_at    TEXT NOT NULL,
+    created_by    INTEGER NOT NULL REFERENCES staff(id),
+    CHECK ((type = 'sale') = (payment_id IS NOT NULL))
+  );
+  CREATE INDEX idx_membership_events_membership ON membership_events(membership_id, id);
+  CREATE TRIGGER membership_events_no_update BEFORE UPDATE ON membership_events
+    BEGIN SELECT RAISE(ABORT, 'membership_events is append-only'); END;
+  CREATE TRIGGER membership_events_no_delete BEFORE DELETE ON membership_events
+    BEGIN SELECT RAISE(ABORT, 'membership_events is append-only'); END;
+
+  ALTER TABLE memberships ADD COLUMN modified_by INTEGER REFERENCES staff(id);
+  `,
 ];

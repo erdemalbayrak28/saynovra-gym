@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-mediapipe.mjs",
     "dev": "vite --port 5173 --strictPort",
+    "prebuild": "node scripts/copy-mediapipe.mjs",
     "build": "tsc --noEmit -p . && vite build",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "1.1.1",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.70.0",
     "react": "^19.3.1",

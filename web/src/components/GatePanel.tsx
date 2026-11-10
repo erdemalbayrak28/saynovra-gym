@@ -1,30 +1,31 @@
-import { ChevronDown, LogOut, Users } from 'lucide-react';
+import { ChevronDown, Users } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { GATE_CODE_PREFIX, gateStep, type CheckinDto, type FloorEvent, type LiveEvent, type StaffSummary } from '../../../shared/contract';
-import { AccessLog } from '../components/AccessLog';
-import { FloorFeed } from '../components/FloorFeed';
-import { GateStatus, type GateView } from '../components/GateStatus';
-import { QrScanner } from '../components/QrScanner';
-import { Card, Label, Wordmark } from '../components/ui';
 import { ApiError, api } from '../lib/api';
 import { beep } from '../lib/beep';
-import type { StaffSession } from '../lib/session';
-import { useLive } from '../lib/useLive';
+import { useLiveEvent } from '../lib/live';
+import { AccessLog } from './AccessLog';
+import { FloorFeed } from './FloorFeed';
+import { GateStatus, type GateView } from './GateStatus';
+import { QrScanner } from './QrScanner';
+import { Card, Label } from './ui';
 
 /** How long a result stays on screen before the gate is ready again. */
 const RESULT_HOLD_MS = 3400;
 /** A phone held at the camera is decoded many times per second; the same text is sent once. */
 const SAME_CODE_COOLDOWN_MS = 5000;
 const LOG_LIMIT = 30;
+const COMPACT_LOG_LIMIT = 6;
 const FLOOR_LIMIT = 5;
 
 interface Props {
-  session: StaffSession;
-  onLogout: () => void;
+  token: string;
+  onUnauthorized: () => void;
+  /** One column for the side-by-side screen: scanner, result, numbers and the latest passes. */
+  compact?: boolean;
 }
 
-export function Kiosk({ session, onLogout }: Props) {
-  const { token } = session;
+export function GatePanel({ token, onUnauthorized, compact = false }: Props) {
   const [view, setView] = useState<GateView>({ kind: 'idle' });
   const [checkins, setCheckins] = useState<CheckinDto[]>([]);
   const [summary, setSummary] = useState<StaffSummary | null>(null);
@@ -36,10 +37,10 @@ export function Kiosk({ session, onLogout }: Props) {
 
   const fail = useCallback(
     (err: unknown): string => {
-      if (err instanceof ApiError && err.status === 401) onLogout();
+      if (err instanceof ApiError && err.status === 401) onUnauthorized();
       return err instanceof ApiError ? err.message : 'Beklenmeyen hata';
     },
-    [onLogout],
+    [onUnauthorized],
   );
 
   const refreshSummary = useCallback(() => {
@@ -53,20 +54,16 @@ export function Kiosk({ session, onLogout }: Props) {
     return () => window.clearTimeout(resetTimer.current);
   }, [token, refreshSummary, fail]);
 
-  const onLive = useCallback(
-    (event: LiveEvent) => {
-      if (event.type === 'floor') {
-        setFloor((current) => [event.event, ...current.filter((e) => e.id !== event.event.id)].slice(0, FLOOR_LIMIT));
-        return;
-      }
-      if (event.type !== 'checkin') return;
-      setCheckins((current) => [event.checkin, ...current.filter((c) => c.id !== event.checkin.id)].slice(0, LOG_LIMIT));
-      setSummary((current) => (current ? { ...current, gym: event.gym } : current));
-      refreshSummary();
-    },
-    [refreshSummary],
-  );
-  const liveState = useLive(token, onLive);
+  useLiveEvent((event: LiveEvent) => {
+    if (event.type === 'floor') {
+      setFloor((current) => [event.event, ...current.filter((e) => e.id !== event.event.id)].slice(0, FLOOR_LIMIT));
+      return;
+    }
+    if (event.type !== 'checkin') return;
+    setCheckins((current) => [event.checkin, ...current.filter((c) => c.id !== event.checkin.id)].slice(0, LOG_LIMIT));
+    setSummary((current) => (current ? { ...current, gym: event.gym } : current));
+    refreshSummary();
+  });
 
   const submitCode = useCallback(
     async (text: string) => {
@@ -97,65 +94,66 @@ export function Kiosk({ session, onLogout }: Props) {
 
   const gym = summary?.gym;
   const occupancy = gym ? Math.round((gym.insideCount / gym.capacity) * 100) : null;
+  const stats = (
+    <div className="grid grid-cols-3 gap-3">
+      <Stat label="İçeride" value={gym ? `${gym.insideCount}` : '-'} hint={gym ? `/ ${gym.capacity} · %${occupancy}` : ''} icon />
+      <Stat label="Bugün giriş" value={summary ? `${summary.todayGranted}` : '-'} />
+      <Stat label="Bugün ret" value={summary ? `${summary.todayDenied}` : '-'} tone="bad" />
+    </div>
+  );
+  const log = (limit: number) =>
+    loadError ? (
+      <p className="rounded-2xl border border-bad/30 bg-bad/10 p-4 text-sm text-bad">{loadError}</p>
+    ) : (
+      <AccessLog checkins={checkins.slice(0, limit)} />
+    );
+  const scanner = (
+    <Card>
+      <div className="mb-3 flex items-center justify-between">
+        <Label className="text-lime">QR okuyucu</Label>
+        <Label className="text-muted">Telefonu kameraya tutun</Label>
+      </div>
+      <QrScanner onCode={submitCode} paused={busy} short={compact} />
+    </Card>
+  );
+
+  if (compact) {
+    return (
+      <div className="space-y-4">
+        <GateStatus view={view} />
+        {scanner}
+        {stats}
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <Label className="text-text">Geçiş kayıtları</Label>
+            <Label className="text-muted">Son {COMPACT_LOG_LIMIT}</Label>
+          </div>
+          {log(COMPACT_LOG_LIMIT)}
+        </div>
+        <TestTools disabled={busy} onSubmit={submitCode} />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-10 border-b border-line bg-surface/90 px-4 py-3 backdrop-blur lg:px-8">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
-          <Wordmark caption="Kapı 01 · Turnike ekranı" />
-          <div className="flex items-center gap-3">
-            <span
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-                liveState === 'open' ? 'border-ok/30 bg-ok/10 text-ok' : 'border-bad/30 bg-bad/10 text-bad'
-              }`}
-            >
-              <span className={`size-1.5 rounded-full ${liveState === 'open' ? 'animate-pulse bg-ok' : 'bg-bad'}`} />
-              {liveState === 'open' ? 'Canlı bağlantı' : liveState === 'connecting' ? 'Bağlanıyor' : 'Bağlantı yok'}
-            </span>
-            <span className="hidden text-sm text-muted sm:inline">{session.staff.name}</span>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-sm text-muted transition hover:text-text"
-            >
-              <LogOut className="size-4" /> Çıkış
-            </button>
+    <div className="grid gap-6 lg:grid-cols-12">
+      <div className="space-y-4 lg:col-span-5">
+        {scanner}
+        <TestTools disabled={busy} onSubmit={submitCode} />
+      </div>
+
+      <div className="space-y-6 lg:col-span-7">
+        <GateStatus view={view} />
+        {stats}
+        <FloorFeed events={floor} />
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <Label className="text-text">Geçiş kayıtları</Label>
+            <Label className="text-muted">Son {LOG_LIMIT}</Label>
           </div>
+          {log(LOG_LIMIT)}
         </div>
-      </header>
-
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-12 lg:px-8">
-        <div className="space-y-4 lg:col-span-5">
-          <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <Label className="text-lime">QR okuyucu</Label>
-              <Label className="text-muted">Telefonu kameraya tutun</Label>
-            </div>
-            <QrScanner onCode={submitCode} paused={busy} />
-          </Card>
-          <TestTools disabled={busy} onSubmit={submitCode} />
-        </div>
-
-        <div className="space-y-6 lg:col-span-7">
-          <GateStatus view={view} />
-
-          <div className="grid grid-cols-3 gap-3">
-            <Stat label="İçeride" value={gym ? `${gym.insideCount}` : '-'} hint={gym ? `/ ${gym.capacity} · %${occupancy}` : ''} icon />
-            <Stat label="Bugün giriş" value={summary ? `${summary.todayGranted}` : '-'} />
-            <Stat label="Bugün ret" value={summary ? `${summary.todayDenied}` : '-'} tone="bad" />
-          </div>
-
-          <FloorFeed events={floor} />
-
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <Label className="text-text">Geçiş kayıtları</Label>
-              <Label className="text-muted">Son {LOG_LIMIT}</Label>
-            </div>
-            {loadError ? <p className="rounded-2xl border border-bad/30 bg-bad/10 p-4 text-sm text-bad">{loadError}</p> : <AccessLog checkins={checkins} />}
-          </div>
-        </div>
-      </main>
+      </div>
     </div>
   );
 }
@@ -167,7 +165,7 @@ function Stat({ label, value, hint, icon, tone }: { label: string; value: string
         {icon && <Users className="size-3.5" />}
         {label}
       </Label>
-      <div className="mt-1 flex items-baseline gap-1.5">
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
         <span className={`font-display text-3xl font-bold ${tone === 'bad' ? 'text-bad' : 'text-lime'}`}>{value}</span>
         {hint && <span className="text-xs text-muted">{hint}</span>}
       </div>
