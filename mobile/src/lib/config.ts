@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 const API_PORT = 3000;
 
@@ -10,6 +11,9 @@ function resolveApiUrl(): string {
   const override = process.env.EXPO_PUBLIC_API_URL;
   if (override) return override.replace(/\/$/, '');
   const host = Constants.expoConfig?.hostUri?.split(':')[0];
+  if (Platform.OS === 'android' && (!host || host === 'localhost' || host === '127.0.0.1')) {
+    return `http://10.0.2.2:${API_PORT}`;
+  }
   return `http://${host || 'localhost'}:${API_PORT}`;
 }
 
