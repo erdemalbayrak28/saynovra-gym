@@ -24,6 +24,14 @@ export function StatusPill({ status }: { status: MembershipStatus }) {
   );
 }
 
+export function RolePill() {
+  return (
+    <span className="inline-flex items-center whitespace-nowrap rounded-full border border-lime/40 bg-lime/10 px-2 py-0.5 text-xs font-semibold text-lime">
+      Eğitmen
+    </span>
+  );
+}
+
 export function ReceptionStats({ summary }: { summary: ReceptionSummary | null }) {
   const methods = summary
     ? (Object.entries(summary.byMethod) as [PaymentMethod, number][])
@@ -73,7 +81,7 @@ export function MemberRow({ member, selected, onSelect }: { member: MemberListIt
         <span className="block truncate font-mono text-xs text-muted">{phone(member.phone)}</span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">
-        {membership ? <StatusPill status={membership.status} /> : <span className="text-xs text-muted">Üyelik yok</span>}
+        {member.role === 'trainer' ? <RolePill /> : membership ? <StatusPill status={membership.status} /> : <span className="text-xs text-muted">Üyelik yok</span>}
         {membership?.status === 'active' && <span className="text-xs text-muted">{daysLeftText(membership.daysLeft)}</span>}
       </span>
     </button>

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { GYM_SPOTS, SPOT_MESSAGE_MAX, SPOT_NOTE_MAX } from '../../../shared/contract.ts';
 import type { AppDeps } from '../app.ts';
-import type { AppEnv } from '../middleware.ts';
+import { requireRole, type AppEnv } from '../middleware.ts';
 import { readJson, validate } from '../problem.ts';
 import { actOnRequest, chat, closePost, closeStalePosts, openPost, radar, sendMessage, sendRequest } from '../social.ts';
 import { publishMessage, publishSocialChange } from '../social-events.ts';
@@ -16,9 +16,12 @@ const postSchema = z.object({
 const requestSchema = z.object({ postId: z.number().int().positive() });
 const messageSchema = z.object({ body: z.string().trim().min(1, 'Mesaj boş olamaz').max(SPOT_MESSAGE_MAX) });
 
-/** Buddy radar for members, mounted under /me (member auth is applied by the parent). */
-export function socialRoutes({ db, live, now }: AppDeps): Hono<AppEnv> {
+/** Buddy radar, mounted under /me. Members only: trainers are not on the radar. */
+export function socialRoutes({ db, config, live, now }: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
+  for (const path of ['/radar', '/radar/*', '/spot-requests', '/spot-requests/*']) {
+    routes.use(path, requireRole({ secret: config.JWT_SECRET, db }, 'member'));
+  }
 
   routes.get('/radar', (c) => {
     const at = now();

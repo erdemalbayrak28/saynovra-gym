@@ -13,6 +13,7 @@ import type {
   SellMembershipRequest,
   StaffLoginResponse,
   StaffSummary,
+  TrainerOption,
 } from '../../../shared/contract';
 import { API_URL } from './config';
 
@@ -72,6 +73,9 @@ export const api = {
   createMember: (token: string, body: CreateMemberRequest) => request<CreateMemberResponse>('/staff/members', { method: 'POST', body, token }),
   issueActivation: (token: string, memberId: number) =>
     request<ActivationCodeResponse>(`/staff/members/${memberId}/activation`, { method: 'POST', body: {}, token }),
+  trainers: (token: string) => request<TrainerOption[]>('/staff/trainers', { token }),
+  assignTrainer: (token: string, memberId: number, trainerId: number | null) =>
+    request<MemberDetail>(`/staff/members/${memberId}/trainer`, { method: 'POST', body: { trainerId }, token }),
   membershipAction: (token: string, membershipId: number, action: 'freeze' | 'unfreeze' | 'cancel') =>
     request<MemberDetail>(`/staff/memberships/${membershipId}/${action}`, { method: 'POST', token }),
 };

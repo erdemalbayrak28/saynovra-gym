@@ -64,12 +64,20 @@ Telefonsuz prova: kapı ekranındaki "Test araçları" ile kod yapıştırılabi
 
 Şifresini unutan üyeye üye kartındaki "Şifre yenileme kodu ver" ile yeni kod verilir; yeni şifre belirlenince üyenin eski oturumları kapanır. Uygulamada herkese açık kayıt yoktur, hesabı yalnızca personel açar. Örnek veride Selin Arıkan (`5550000999`) kaydedilmiş ama uygulamaya girmemiş olarak gelir; ona resepsiyondan kod verip akışı deneyebilirsiniz.
 
+### Eğitmen hesabı
+1. Salon sahibi PIN'iyle resepsiyonda "Yeni hesap" > **Eğitmen**: ad, telefon, eğitmen aydınlatma metni; ekrana etkinleştirme kodu çıkar. Gişe PIN'i eğitmen hesabı açamaz.
+2. Bir üyenin kartındaki "Eğitmen" bölümünden o eğitmeni atayın. Eğitmen yalnızca kendisine atanan üyeleri görür.
+3. Eğitmen telefonda kendi numarasıyla girer: "Üyelerim" (salondakiler en üstte, canlı), üyenin haftalık hacmi, son antrenmanları ve rekorları, "Program ata". Atanan program üyenin Antrenman sekmesine anında düşer.
+4. Eğitmen kapıdan üyelik aranmadan geçer; "AI Form" sekmesiyle üyesinin setini çekebilir.
+
 ### AI form analizi
-1. Üst menüden "AI Form". Hareketi seçin (Squat, Bench press), "Kamerayı başlat" deyin ya da "Video dosyası" ile telefonla çektiğiniz bir seti açın.
-2. Squat için kamera yanda, baştan ayağa tüm vücut kadrajda (2-3 metre). Bench için kamera sehpanın yanında, omuz hizasında.
+1. Web: üst menüden "AI Form". Telefon: Antrenman sekmesindeki "AI Form" kartı ya da antrenman sırasında "Formunu AI ile kontrol et". Hareketi seçin: Squat, Bench press, Shoulder press, Biceps curl, Triceps pushdown.
+2. Squat, curl ve pushdown için kamera yanda; bench için sehpanın yanında, omuz hizasında; shoulder press için karşıdan, göğüs hizasında. Web'de "Video dosyası" ile çekilmiş bir set de açılabilir.
 3. Ekranda iskelet ve ölçülen açı, tekrar sayısı, yarım tekrarlar, en dip açı, kaldırma süresi ve yavaşlama görünür. "Sıfırla" yeni seti başlatır.
 
-Model (`pose_landmarker_lite.task`, yaklaşık 6 MB) ilk açılışta Google'ın sunucusundan iner, tarayıcı saklar. İnternetsiz bir yerde çalışmak için bu dosyayı bir kez [buradan](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task) indirip `web\public\mediapipe\` klasörüne koyun; sayfa önce oraya bakar. Kamera görüntüsü bilgisayardan çıkmaz.
+Telefonda kamera ve model, uygulamanın içindeki bir web görünümünde çalışır; görüntü telefondan çıkmaz. Model ve MediaPipe çalışma dosyaları ilk açılışta internetten iner, bu yüzden telefonda internet gerekir. Ön ve arka kamera arasında "Arka kamera / Ön kamera" ile geçilir.
+
+Web'de model (`pose_landmarker_lite.task`, yaklaşık 6 MB) ilk açılışta Google'ın sunucusundan iner, tarayıcı saklar. İnternetsiz bir yerde çalışmak için bu dosyayı bir kez [buradan](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task) indirip `web\public\mediapipe\` klasörüne koyun; sayfa önce oraya bakar. Kamera görüntüsü bilgisayardan çıkmaz.
 
 ### İkili görünüm ve çekim provası
 Üst menüden "İkili görünüm": kapı solda, resepsiyon sağda. Sayfanın üstündeki "Prova akışı" adım adım senaryoyu gösterir (QR ile giriş, dondur, kapının reddi, dondurmayı kaldır, süresi biten üyeye satış). Geniş ekranda (1600 piksel ve üstü) en iyi görünür.
@@ -85,9 +93,13 @@ Yalnızca yerel örnek veritabanı içindir.
 |---|---|
 | Demo üye (Erdem Albayrak) | Telefon `5550000001`, şifre `novra2026` |
 | Diğer 485 kurgu üye | Telefon `5550000002` ile `5550000486` arası, aynı şifre |
+| Eğitmen: Hakan Koç (demo üyenin eğitmeni) | Telefon `5550001001`, aynı şifre |
+| Eğitmen: Derya Aksoy | Telefon `5550001002`, aynı şifre |
 | Yeni kayıt (Selin Arıkan) | Telefon `5550000999`, şifresi yok: resepsiyondan kod verip etkinleştirin |
 | Personel: Salon Sahibi | PIN `1907` |
 | Personel: Gişe | PIN `2024` |
+
+Yanlış PIN ya da şifre 15 dakikada 5 kez girilirse giriş 15 dakika kilitlenir; sunucuyu yeniden başlatmak kilidi sıfırlar.
 
 ## Örnek veriyi sıfırlamak
 

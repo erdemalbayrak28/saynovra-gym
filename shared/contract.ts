@@ -159,11 +159,26 @@ export interface MembershipSummary {
   daysLeft: number;
 }
 
+/** An app account is a gym member or a trainer; the kind never changes. */
+export type AccountRole = 'member' | 'trainer';
+
+export const ACCOUNT_ROLE_TEXT: Record<AccountRole, string> = {
+  member: 'Üye',
+  trainer: 'Eğitmen',
+};
+
+export interface PersonRef {
+  id: number;
+  fullName: string;
+}
+
 export interface MemberProfile {
   id: number;
+  role: AccountRole;
   fullName: string;
   phone: string;
   birthYear: number | null;
+  gender: MemberGender | null;
   heightCm: number | null;
   weightKg: number | null;
   goal: MemberGoal | null;
@@ -192,6 +207,8 @@ export interface StaffLoginResponse {
 
 export interface MeResponse {
   member: MemberProfile;
+  /** Explicit consent for the optional profile fields is on record; editing them requires it. */
+  optionalDataConsent: boolean;
   membership: MembershipSummary | null;
   isInside: boolean;
   lastCheckinAt: string | null;
@@ -204,6 +221,8 @@ export interface MeResponse {
 
 export interface CheckinMember {
   id: number;
+  /** Trainers pass the gate without a membership. */
+  role: AccountRole;
   fullName: string;
   initials: string;
   planName: string | null;
@@ -247,7 +266,9 @@ export type LiveEvent =
   /** Reception changed a member's membership; sent to staff screens and to that member's phone. */
   | { type: 'membership'; memberId: number }
   /** A member was registered or activated their account; staff screens refetch. */
-  | { type: 'member'; memberId: number };
+  | { type: 'member'; memberId: number }
+  /** A member's programme or trainer changed; sent to that member and their trainer, who refetch. */
+  | { type: 'training'; memberId: number };
 
 // ---------------------------------------------------------------------------
 // Reception
@@ -284,6 +305,7 @@ export interface PlanDto {
 
 export interface MemberListItem {
   id: number;
+  role: AccountRole;
   fullName: string;
   phone: string;
   initials: string;
@@ -316,7 +338,8 @@ export interface MembershipEventDto {
   type: MembershipEventType;
   at: string;
   planName: string;
-  staffName: string;
+  /** Null when the server acted on its own (a freeze allowance that ran out). */
+  staffName: string | null;
   /** Days credited back on unfreeze. */
   days: number | null;
   amountKurus: number | null;
@@ -340,6 +363,20 @@ export interface MemberDetail {
   activationExpiresAt: string | null;
   /** KVKK decisions, newest first. */
   consents: ConsentDto[];
+  /** A member's trainer, if one is assigned. */
+  trainer: PersonRef | null;
+  /** A trainer's members, by name. Empty for members. */
+  trainees: PersonRef[];
+}
+
+/** A trainer account, for the "assign a trainer" list at reception. */
+export interface TrainerOption extends PersonRef {
+  traineeCount: number;
+}
+
+export interface AssignTrainerRequest {
+  /** Null takes the member's trainer away. */
+  trainerId: number | null;
 }
 
 export interface SellMembershipRequest {
@@ -376,9 +413,11 @@ export interface NewMemberProfile {
 }
 
 export interface CreateMemberRequest {
+  /** Trainer accounts: owner only, no package, no optional profile. */
+  role: AccountRole;
   fullName: string;
   phone: string;
-  /** Must equal KVKK_NOTICE_VERSION (shared/consent.ts): the text the member was shown. */
+  /** The version of the text the person was shown (shared/consent.ts): members and trainers have their own. */
   noticeVersion: string;
   /** Notice acknowledged (required) and explicit consent for the optional profile fields. */
   consents: { notice: true; optionalData: boolean };
@@ -572,6 +611,8 @@ export interface ProgramSummary {
 
 export interface ExerciseInfo {
   id: number;
+  /** Catalog key, e.g. "biceps-curl"; maps to an AI Form movement (shared/pose.ts FORM_EXERCISE_BY_SLUG). */
+  slug: string;
   name: string;
   muscleGroup: string;
   equipment: string;
@@ -664,9 +705,13 @@ export interface Enrollment {
   program: ProgramSummary;
   startedAt: string;
   completedWorkouts: number;
+  /** The trainer who assigned this programme; null when the member chose it. */
+  assignedBy: PersonRef | null;
 }
 
 export interface MyTrainingResponse {
+  /** The member's trainer, if reception assigned one. */
+  trainer: PersonRef | null;
   enrollment: Enrollment | null;
   nextDay: ProgramDayDto | null;
   activeWorkoutId: number | null;
@@ -701,4 +746,58 @@ export interface ExerciseProgressPoint {
 export interface ExerciseProgressResponse {
   exercise: ExerciseInfo;
   points: ExerciseProgressPoint[];
+}
+
+// ---------------------------------------------------------------------------
+// Profile editing (members)
+// ---------------------------------------------------------------------------
+
+export interface UpdateProfileRequest {
+  profile: NewMemberProfile;
+  /**
+   * A member without consent on record gives it here, by confirming the text of this version
+   * (KVKK_NOTICE_VERSION). Ignored when consent is already on record.
+   */
+  consentVersion: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Trainers: see their own members, assign programmes
+// ---------------------------------------------------------------------------
+
+export interface TrainerMemberItem {
+  id: number;
+  fullName: string;
+  initials: string;
+  isInside: boolean;
+  membershipStatus: MembershipStatus | null;
+  programName: string | null;
+  /** Finished workouts since Monday. */
+  weekWorkouts: number;
+  lastWorkoutAt: string | null;
+}
+
+export interface TrainerWorkoutRow {
+  id: number;
+  finishedAt: string;
+  dayName: string;
+  sets: number;
+  volumeKg: number;
+}
+
+export interface TrainerMemberDetail {
+  member: TrainerMemberItem;
+  goal: MemberGoal | null;
+  heightCm: number | null;
+  weightKg: number | null;
+  enrollment: Enrollment | null;
+  nextDay: ProgramDayDto | null;
+  activeWorkout: boolean;
+  progress: ProgressResponse;
+  /** Newest first. */
+  recentWorkouts: TrainerWorkoutRow[];
+}
+
+export interface AssignProgramRequest {
+  programId: number;
 }

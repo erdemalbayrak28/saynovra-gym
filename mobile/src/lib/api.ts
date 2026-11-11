@@ -5,6 +5,7 @@ import type {
   LogSetRequest,
   MeResponse,
   MemberLoginResponse,
+  MemberProfile,
   MyConsentsResponse,
   MyTrainingResponse,
   OccupancyResponse,
@@ -18,11 +19,14 @@ import type {
   SpotMessageDto,
   SpotRequestDto,
   SpotterPostDto,
+  TrainerMemberDetail,
+  TrainerMemberItem,
+  UpdateProfileRequest,
   WorkoutDto,
   WorkoutSetDto,
   WorkoutSummary,
 } from '../../../shared/contract';
-import { API_URL } from './config';
+import { apiUrl } from './config';
 
 const TIMEOUT_MS = 8000;
 
@@ -40,7 +44,7 @@ async function request<T>(path: string, init: { method?: 'GET' | 'POST'; body?: 
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(API_URL + path, {
+    res = await fetch(apiUrl() + path, {
       method: init.method ?? 'GET',
       headers: {
         ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -70,6 +74,12 @@ export const api = {
     request<MemberLoginResponse>('/auth/member/activate', { method: 'POST', body: { phone, code, password } }),
   me: (token: string) => request<MeResponse>('/me', { token }),
   consents: (token: string) => request<MyConsentsResponse>('/me/consents', { token }),
+  updateProfile: (token: string, body: UpdateProfileRequest) => post<MemberProfile>('/me/profile', token, body),
+
+  trainees: (token: string) => request<TrainerMemberItem[]>('/trainer/members', { token }),
+  trainee: (token: string, memberId: number) => request<TrainerMemberDetail>(`/trainer/members/${memberId}`, { token }),
+  assignProgram: (token: string, memberId: number, programId: number) =>
+    post<TrainerMemberDetail>(`/trainer/members/${memberId}/program`, token, { programId }),
   qrKey: (token: string) => request<QrKeyResponse>('/me/qr-key', { token }),
 
   programs: (token: string) => request<ProgramSummary[]>('/programs', { token }),

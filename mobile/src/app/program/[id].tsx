@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Clock } from 'lucide-react-native';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { PROGRAM_GOAL_TEXT, PROGRAM_LEVEL_TEXT } from '../../../../shared/contract';
 import { ApiError, api } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -21,6 +21,18 @@ export default function ProgramDetailScreen() {
 
   const detail = program.data;
   const isCurrent = training.data?.enrollment?.program.id === programId;
+
+  const assignedBy = training.data?.enrollment?.assignedBy ?? null;
+  const confirmStart = () => {
+    if (!assignedBy || isCurrent) {
+      void start();
+      return;
+    }
+    Alert.alert('Programı değiştir', `Şu anki programını eğitmenin ${assignedBy.fullName} atadı. Yine de değiştirmek istiyor musun? Eğitmenin değişikliği görür.`, [
+      { text: 'Vazgeç', style: 'cancel' },
+      { text: 'Değiştir', onPress: () => void start() },
+    ]);
+  };
 
   const start = async () => {
     if (!session) return;
@@ -75,7 +87,7 @@ export default function ProgramDetailScreen() {
           {isCurrent ? (
             <Body style={{ textAlign: 'center', color: colors.lime }}>Şu an bu programdasın.</Body>
           ) : (
-            <Button title="Bu programla başla" onPress={start} loading={busy} />
+            <Button title="Bu programla başla" onPress={confirmStart} loading={busy} />
           )}
         </>
       )}

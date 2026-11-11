@@ -19,6 +19,7 @@ import type {
 import { transaction, type Db } from './db.ts';
 import { describeSession, suggestNext, type Session } from './domain/progression.ts';
 import { HttpProblem } from './problem.ts';
+import { personRef, trainerIdOf } from './queries.ts';
 import { addDays, localDate, mondayOf, startOfLocalDate } from './time.ts';
 
 /** Average working time per set, used with the rest time to estimate a session's length. */
@@ -59,6 +60,7 @@ interface ItemRow {
   rest_sec: number;
   start_weight_kg: number | null;
   exercise_id: number;
+  exercise_slug: string;
   exercise_name: string;
   muscle_group: string;
   equipment: string;
@@ -72,6 +74,7 @@ interface EnrollmentRow {
   program_id: number;
   next_day_index: number;
   started_at: string;
+  assigned_by: number | null;
 }
 
 interface WorkoutRow {
@@ -98,7 +101,7 @@ const PROGRAM_SELECT = `
 
 const ITEM_SELECT = `
   SELECT i.id, i.program_day_id, i.target_sets, i.rep_min, i.rep_max, i.rest_sec, i.start_weight_kg,
-    e.id AS exercise_id, e.name AS exercise_name, e.muscle_group, e.equipment, e.is_lower_body, e.is_bodyweight, e.cue
+    e.id AS exercise_id, e.slug AS exercise_slug, e.name AS exercise_name, e.muscle_group, e.equipment, e.is_lower_body, e.is_bodyweight, e.cue
   FROM program_items i JOIN exercises e ON e.id = i.exercise_id`;
 
 function toSummary(row: ProgramRow): ProgramSummary {
@@ -117,6 +120,7 @@ function toSummary(row: ProgramRow): ProgramSummary {
 function toExercise(row: ItemRow): ExerciseInfo {
   return {
     id: row.exercise_id,
+    slug: row.exercise_slug,
     name: row.exercise_name,
     muscleGroup: row.muscle_group,
     equipment: row.equipment,
@@ -180,7 +184,7 @@ function dayByIndex(db: Db, programId: number, dayIndex: number): DayRow {
 
 function activeEnrollment(db: Db, memberId: number): EnrollmentRow | undefined {
   return db
-    .prepare('SELECT id, program_id, next_day_index, started_at FROM member_programs WHERE member_id = ? AND ended_at IS NULL')
+    .prepare('SELECT id, program_id, next_day_index, started_at, assigned_by FROM member_programs WHERE member_id = ? AND ended_at IS NULL')
     .get(memberId) as EnrollmentRow | undefined;
 }
 
@@ -196,10 +200,20 @@ function completedWorkouts(db: Db, enrollmentId: number): number {
 function toEnrollment(db: Db, row: EnrollmentRow): Enrollment {
   const program = findProgram(db, row.program_id);
   if (!program) throw new Error(`Enrollment ${row.id} points at missing program ${row.program_id}`);
-  return { id: row.id, program: toSummary(program), startedAt: row.started_at, completedWorkouts: completedWorkouts(db, row.id) };
+  return {
+    id: row.id,
+    program: toSummary(program),
+    startedAt: row.started_at,
+    completedWorkouts: completedWorkouts(db, row.id),
+    assignedBy: personRef(db, row.assigned_by),
+  };
 }
 
-export function enroll(db: Db, memberId: number, programId: number, now: Date): Enrollment {
+/**
+ * Starts a programme for a member, ending the one in progress. `assignedBy` is the trainer who
+ * chose it; null when the member chose it themself.
+ */
+export function enroll(db: Db, memberId: number, programId: number, now: Date, assignedBy: number | null = null): Enrollment {
   return transaction(db, () => {
     if (!findProgram(db, programId)) throw new HttpProblem(404, 'Program bulunamadı');
     if (activeWorkout(db, memberId)) {
@@ -208,8 +222,8 @@ export function enroll(db: Db, memberId: number, programId: number, now: Date): 
     const stamp = now.toISOString();
     db.prepare('UPDATE member_programs SET ended_at = ?, modified_at = ? WHERE member_id = ? AND ended_at IS NULL').run(stamp, stamp, memberId);
     db.prepare(
-      'INSERT INTO member_programs (member_id, program_id, next_day_index, started_at, created_at, modified_at) VALUES (?, ?, 1, ?, ?, ?)',
-    ).run(memberId, programId, stamp, stamp, stamp);
+      'INSERT INTO member_programs (member_id, program_id, next_day_index, started_at, created_at, modified_at, assigned_by) VALUES (?, ?, 1, ?, ?, ?, ?)',
+    ).run(memberId, programId, stamp, stamp, stamp, assignedBy);
     const row = activeEnrollment(db, memberId);
     if (!row) throw new Error('Enrollment vanished right after insert');
     return toEnrollment(db, row);
@@ -223,6 +237,7 @@ export function myTraining(db: Db, memberId: number, now: Date, timeZone: string
     .prepare("SELECT COUNT(*) AS n FROM workouts WHERE member_id = ? AND status = 'done' AND finished_at >= ?")
     .get(memberId, weekStart) as { n: number };
   return {
+    trainer: personRef(db, trainerIdOf(db, memberId)),
     enrollment: row ? toEnrollment(db, row) : null,
     nextDay: row ? toDay(db, dayByIndex(db, row.program_id, row.next_day_index)) : null,
     activeWorkoutId: activeWorkout(db, memberId)?.id ?? null,
@@ -452,7 +467,7 @@ export function progress(db: Db, memberId: number, now: Date, timeZone: string):
 export function exerciseProgress(db: Db, memberId: number, exerciseId: number, timeZone: string): ExerciseProgressResponse {
   const exercise = db
     .prepare(
-      `SELECT id AS exercise_id, name AS exercise_name, muscle_group, equipment, is_bodyweight, cue FROM exercises WHERE id = ?`,
+      `SELECT id AS exercise_id, slug AS exercise_slug, name AS exercise_name, muscle_group, equipment, is_bodyweight, cue FROM exercises WHERE id = ?`,
     )
     .get(exerciseId) as ItemRow | undefined;
   if (!exercise) throw new HttpProblem(404, 'Hareket bulunamadı');

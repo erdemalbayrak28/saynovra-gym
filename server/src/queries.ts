@@ -1,11 +1,14 @@
 import type {
+  AccountRole,
   CheckinDto,
   ConsentDto,
   ConsentKind,
   GateDenyReason,
   GateDirection,
+  MemberGender,
   MemberGoal,
   MemberProfile,
+  PersonRef,
   MembershipStatus,
   StaffRole,
 } from '../../shared/contract.ts';
@@ -22,10 +25,14 @@ export const INSIDE_TIMEOUT_HOURS = 4;
 
 export interface MemberRow {
   id: number;
+  role: AccountRole;
+  /** The member's trainer; always null for trainers. */
+  trainer_id: number | null;
   full_name: string;
   phone: string;
   password_hash: string;
   birth_year: number | null;
+  gender: MemberGender | null;
   height_cm: number | null;
   weight_kg: number | null;
   goal: MemberGoal | null;
@@ -55,6 +62,7 @@ interface CheckinJoinRow {
   result: 'granted' | 'denied';
   reason: GateDenyReason | null;
   member_id: number | null;
+  member_role: AccountRole | null;
   full_name: string | null;
   plan_name: string | null;
   ends_on: string | null;
@@ -64,7 +72,8 @@ interface CheckinJoinRow {
 // Members and staff
 // ---------------------------------------------------------------------------
 
-const MEMBER_COLUMNS = 'id, full_name, phone, password_hash, birth_year, height_cm, weight_kg, goal, qr_secret, session_epoch';
+const MEMBER_COLUMNS =
+  'id, role, trainer_id, full_name, phone, password_hash, birth_year, gender, height_cm, weight_kg, goal, qr_secret, session_epoch';
 
 export function findMemberById(db: Db, id: number): MemberRow | undefined {
   return db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE id = ?`).get(id) as MemberRow | undefined;
@@ -72,6 +81,27 @@ export function findMemberById(db: Db, id: number): MemberRow | undefined {
 
 export function findMemberByPhone(db: Db, phone: string): MemberRow | undefined {
   return db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE phone = ?`).get(phone) as MemberRow | undefined;
+}
+
+/** Name of an account by id, for "your trainer" and "assigned by" lines. */
+export function personRef(db: Db, id: number | null): PersonRef | null {
+  if (id === null) return null;
+  const row = db.prepare('SELECT id, full_name FROM members WHERE id = ?').get(id) as { id: number; full_name: string } | undefined;
+  return row ? { id: row.id, fullName: row.full_name } : null;
+}
+
+/** The trainer assigned to a member, if any. */
+export function trainerIdOf(db: Db, memberId: number): number | null {
+  const row = db.prepare('SELECT trainer_id FROM members WHERE id = ?').get(memberId) as { trainer_id: number | null } | undefined;
+  return row?.trainer_id ?? null;
+}
+
+/** True when explicit consent for the optional profile fields is the latest decision on record. */
+export function hasOptionalDataConsent(db: Db, memberId: number): boolean {
+  const row = db
+    .prepare("SELECT granted FROM member_consents WHERE member_id = ? AND kind = 'optional_data' ORDER BY id DESC LIMIT 1")
+    .get(memberId) as { granted: number } | undefined;
+  return row?.granted === 1;
 }
 
 /** KVKK decisions, newest first. */
@@ -110,9 +140,11 @@ export function listStaff(db: Db): StaffRow[] {
 export function toProfile(row: MemberRow): MemberProfile {
   return {
     id: row.id,
+    role: row.role,
     fullName: row.full_name,
     phone: row.phone,
     birthYear: row.birth_year,
+    gender: row.gender,
     heightCm: row.height_cm,
     weightKg: row.weight_kg,
     goal: row.goal,
@@ -214,7 +246,7 @@ export function insertCheckin(
 }
 
 const CHECKIN_SELECT = `
-  SELECT c.id, c.created_at, c.direction, c.result, c.reason, c.member_id, mb.full_name,
+  SELECT c.id, c.created_at, c.direction, c.result, c.reason, c.member_id, mb.role AS member_role, mb.full_name,
     (SELECT p.name FROM memberships ms JOIN plans p ON p.id = ms.plan_id
       WHERE ms.member_id = c.member_id AND ms.starts_on <= :today
       ORDER BY ms.ends_on DESC, ms.id DESC LIMIT 1) AS plan_name,
@@ -234,6 +266,7 @@ function toCheckinDto(row: CheckinJoinRow, today: string): CheckinDto {
       row.member_id !== null && row.full_name !== null
         ? {
             id: row.member_id,
+            role: row.member_role ?? 'member',
             fullName: row.full_name,
             initials: initials(row.full_name),
             planName: row.plan_name,

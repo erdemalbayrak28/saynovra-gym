@@ -50,8 +50,8 @@ function insertActivation(db: Db, memberId: number, prepared: PreparedCode, acti
 }
 
 /**
- * Opens an account at reception: member row, KVKK decisions, optional first package and an
- * activation code, all in one transaction. The account has no usable password until the member
+ * Opens an account at reception (a member or a trainer): the row, KVKK decisions, optional first
+ * package and an activation code, all in one transaction. The account has no usable password until the member
  * activates it. `request` must already be validated (optional fields only with consent).
  */
 export async function registerMember(
@@ -72,12 +72,13 @@ export async function registerMember(
     const { profile } = request;
     const result = db
       .prepare(
-        `INSERT INTO members (full_name, phone, password_hash, birth_year, gender, height_cm, weight_kg, goal, qr_secret,
+        `INSERT INTO members (role, full_name, phone, password_hash, birth_year, gender, height_cm, weight_kg, goal, qr_secret,
            created_at, modified_at, created_by, modified_by)
-         VALUES (:fullName, :phone, :passwordHash, :birthYear, :gender, :heightCm, :weightKg, :goal, :qrSecret,
+         VALUES (:role, :fullName, :phone, :passwordHash, :birthYear, :gender, :heightCm, :weightKg, :goal, :qrSecret,
            :stamp, :stamp, :staffId, :staffId)`,
       )
       .run({
+        role: request.role,
         fullName: request.fullName,
         phone: request.phone,
         passwordHash: lockedHash,
@@ -96,7 +97,10 @@ export async function registerMember(
       'INSERT INTO member_consents (member_id, kind, version, granted, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)',
     );
     consent.run(memberId, 'notice', request.noticeVersion, 1, stamp, action.staffId);
-    consent.run(memberId, 'optional_data', request.noticeVersion, request.consents.optionalData ? 1 : 0, stamp, action.staffId);
+    // Trainers have no optional profile, so there is no decision about it to record.
+    if (request.role === 'member') {
+      consent.run(memberId, 'optional_data', request.noticeVersion, request.consents.optionalData ? 1 : 0, stamp, action.staffId);
+    }
 
     if (request.sale) insertSale(db, memberId, request.sale, action);
     return { memberId, activation: insertActivation(db, memberId, prepared, action) };

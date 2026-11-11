@@ -53,6 +53,17 @@ export function drawPose(
   });
 
   if (!reading) return;
+  // Front-view movements measure both arms: the second one gets the lime line, the first the arc and label.
+  context.strokeStyle = LIME;
+  context.lineWidth = unit * 3;
+  for (const other of reading.chains.slice(1)) {
+    const [p, q, r] = other.points.map(at) as [readonly [number, number], readonly [number, number], readonly [number, number]];
+    context.beginPath();
+    context.moveTo(...p);
+    context.lineTo(...q);
+    context.lineTo(...r);
+    context.stroke();
+  }
   const [a, b, c] = reading.chain.points.map(at) as [readonly [number, number], readonly [number, number], readonly [number, number]];
   context.strokeStyle = LIME;
   context.lineWidth = unit * 3;

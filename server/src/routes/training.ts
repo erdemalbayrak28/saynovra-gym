@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppDeps } from '../app.ts';
-import type { AppEnv } from '../middleware.ts';
+import { isStaff } from '../auth.ts';
+import { requireRole, type AppEnv } from '../middleware.ts';
+import { trainerIdOf } from '../queries.ts';
 import { readJson, validate } from '../problem.ts';
 import {
   discardWorkout,
@@ -24,15 +26,23 @@ const logSetSchema = z.object({
   rpe: z.number().min(5).max(10).nullable().default(null),
 });
 
-/** Member training endpoints, mounted under /me (member auth is applied by the parent). */
-export function trainingRoutes({ db, config, now }: AppDeps): Hono<AppEnv> {
+const PATHS = ['/training', '/program', '/workouts', '/workouts/*', '/progress', '/progress/*'];
+
+/** Member training endpoints, mounted under /me. Trainers have no training of their own here. */
+export function trainingRoutes({ db, config, live, now }: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
+  for (const path of PATHS) routes.use(path, requireRole({ secret: config.JWT_SECRET, db }, 'member'));
 
   routes.get('/training', (c) => c.json(myTraining(db, c.get('auth').sub, now(), config.GYM_TIMEZONE)));
 
   routes.post('/program', async (c) => {
     const { programId } = await readJson(c, enrollSchema);
-    return c.json(enroll(db, c.get('auth').sub, programId, now()), 201);
+    const memberId = c.get('auth').sub;
+    const enrollment = enroll(db, memberId, programId, now());
+    // The member's trainer sees the change on their list.
+    const trainerId = trainerIdOf(db, memberId);
+    if (trainerId !== null) live.publish({ type: 'training', memberId }, (claims) => !isStaff(claims) && claims.sub === trainerId);
+    return c.json(enrollment, 201);
   });
 
   routes.post('/workouts', (c) => c.json(startWorkout(db, c.get('auth').sub, now())));

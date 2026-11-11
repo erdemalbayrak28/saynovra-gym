@@ -285,4 +285,55 @@ export const MIGRATIONS: readonly string[] = [
   -- Everyone who already had an account signed in with a password of their own.
   UPDATE members SET activated_at = created_at;
   `,
+
+  // 6: trainers. An app account is a member or a trainer; members can be assigned to a trainer, who
+  // may assign them programmes. Membership history may now record automatic unfreezes (no staff).
+  `
+  ALTER TABLE members ADD COLUMN role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'trainer'));
+  ALTER TABLE members ADD COLUMN trainer_id INTEGER REFERENCES members(id);
+  CREATE INDEX idx_members_trainer ON members(trainer_id) WHERE trainer_id IS NOT NULL;
+
+  -- Only members have a trainer, and it must be a trainer account.
+  CREATE TRIGGER members_trainer_insert BEFORE INSERT ON members WHEN NEW.trainer_id IS NOT NULL
+    BEGIN
+      SELECT RAISE(ABORT, 'trainer_id must point to a trainer')
+      WHERE NEW.role <> 'member' OR (SELECT role FROM members WHERE id = NEW.trainer_id) IS NOT 'trainer';
+    END;
+  CREATE TRIGGER members_trainer_update BEFORE UPDATE OF trainer_id ON members WHEN NEW.trainer_id IS NOT NULL
+    BEGIN
+      SELECT RAISE(ABORT, 'trainer_id must point to a trainer')
+      WHERE NEW.role <> 'member' OR (SELECT role FROM members WHERE id = NEW.trainer_id) IS NOT 'trainer';
+    END;
+  -- An account never changes kind: a member's data and a trainer's access must not mix.
+  CREATE TRIGGER members_role_fixed BEFORE UPDATE OF role ON members WHEN NEW.role <> OLD.role
+    BEGIN SELECT RAISE(ABORT, 'role cannot change'); END;
+
+  -- The trainer who assigned the programme; NULL when the member chose it.
+  ALTER TABLE member_programs ADD COLUMN assigned_by INTEGER REFERENCES members(id);
+
+  -- created_by may be NULL only for an unfreeze the server made on its own. SQLite cannot relax
+  -- NOT NULL in place, so the table is rebuilt with its append-only triggers.
+  DROP TRIGGER membership_events_no_update;
+  DROP TRIGGER membership_events_no_delete;
+  CREATE TABLE membership_events_v6 (
+    id            INTEGER PRIMARY KEY,
+    membership_id INTEGER NOT NULL REFERENCES memberships(id),
+    type          TEXT NOT NULL CHECK (type IN ('sale', 'freeze', 'unfreeze', 'cancel')),
+    days          INTEGER CHECK (days IS NULL OR days >= 0),
+    payment_id    INTEGER REFERENCES payments(id),
+    created_at    TEXT NOT NULL,
+    created_by    INTEGER REFERENCES staff(id),
+    CHECK ((type = 'sale') = (payment_id IS NOT NULL)),
+    CHECK (created_by IS NOT NULL OR type = 'unfreeze')
+  );
+  INSERT INTO membership_events_v6 (id, membership_id, type, days, payment_id, created_at, created_by)
+    SELECT id, membership_id, type, days, payment_id, created_at, created_by FROM membership_events;
+  DROP TABLE membership_events;
+  ALTER TABLE membership_events_v6 RENAME TO membership_events;
+  CREATE INDEX idx_membership_events_membership ON membership_events(membership_id, id);
+  CREATE TRIGGER membership_events_no_update BEFORE UPDATE ON membership_events
+    BEGIN SELECT RAISE(ABORT, 'membership_events is append-only'); END;
+  CREATE TRIGGER membership_events_no_delete BEFORE DELETE ON membership_events
+    BEGIN SELECT RAISE(ABORT, 'membership_events is append-only'); END;
+  `,
 ];

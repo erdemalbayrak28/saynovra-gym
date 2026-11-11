@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from 'react-native';
 import { qrKeyId, type CheckinDto, type LiveEvent, type MeResponse, type MemberLoginResponse, type MemberProfile } from '../../../shared/contract';
 import { ApiError, api } from './api';
-import { LIVE_URL } from './config';
+import { liveUrl, loadServerAddress } from './config';
 import { gateSigner } from './gate';
 import { deleteSecure, readSecure, writeSecure } from './storage';
 
@@ -50,7 +50,7 @@ interface SessionValue {
 }
 
 type LiveListener = (event: LiveEvent) => void;
-const LIVE_TYPES = new Set<LiveEvent['type']>(['checkin', 'radar', 'spot_request', 'spot_message', 'floor', 'membership']);
+const LIVE_TYPES = new Set<LiveEvent['type']>(['checkin', 'radar', 'spot_request', 'spot_message', 'floor', 'membership', 'training']);
 
 const SessionContext = createContext<SessionValue | null>(null);
 
@@ -151,10 +151,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [establish],
   );
 
-  // Restore a saved session once at startup.
+  // Restore a saved session once at startup, after the saved server address is known.
   useEffect(() => {
     let cancelled = false;
-    readSecure(STORAGE_KEY)
+    loadServerAddress()
+      .then(() => readSecure(STORAGE_KEY))
       .then(parseStored, () => null)
       .then((stored) => {
         if (cancelled) return;
@@ -182,7 +183,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let stopped = false;
 
     const connect = () => {
-      socket = new WebSocket(`${LIVE_URL}?token=${encodeURIComponent(token)}`);
+      socket = new WebSocket(`${liveUrl()}?token=${encodeURIComponent(token)}`);
       socket.onopen = () => {
         attempt = 0;
         setLiveConnected(true);
@@ -202,7 +203,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (event.type === 'spot_message' && event.message.senderId !== memberId) setBuddyAlert(true);
         // Reception sold, froze or cancelled a package: the membership card and the QR screen follow at once.
         if (event.type === 'membership' && event.memberId === memberId) void refreshMe();
-        if (event.type !== 'checkin') return;
+        // A trainer also hears their members' passes; only one's own pass changes one's own state.
+        if (event.type !== 'checkin' || event.checkin.member?.id !== memberId) return;
 
         const checkin = event.checkin;
         setLastCheckin({ checkin, receivedAt: Date.now() });

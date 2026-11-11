@@ -1,12 +1,12 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { ProgressWeek } from '../../../shared/contract';
 import { api } from '@/lib/api';
 import { useResource } from '@/lib/useResource';
 import { Body, Card, Label, Screen, ScreenHeader } from '@/ui/components';
 import { kg, shortDate } from '@/ui/format';
 import { LineChart } from '@/ui/LineChart';
+import { WeeksCard } from '@/ui/WeeksCard';
 import { colors, fonts, radius, space } from '@/ui/theme';
 
 export default function ProgressScreen() {
@@ -53,39 +53,6 @@ export default function ProgressScreen() {
   );
 }
 
-function WeeksCard({ weeks }: { weeks: ProgressWeek[] }) {
-  const maxVolume = Math.max(1, ...weeks.map((w) => w.volumeKg));
-  const thisWeek = weeks[weeks.length - 1];
-  return (
-    <Card>
-      <View style={styles.rowBetween}>
-        <Label>Son 6 hafta</Label>
-        <Body>{`Bu hafta ${thisWeek?.workouts ?? 0} antrenman`}</Body>
-      </View>
-      <View style={styles.bars}>
-        {weeks.map((week, index) => {
-          const current = index === weeks.length - 1;
-          return (
-            <View key={week.weekStart} style={styles.barColumn}>
-              <Text style={styles.barCount}>{week.workouts}</Text>
-              <View style={styles.barTrack}>
-                <View
-                  style={[
-                    styles.bar,
-                    { height: `${Math.max(4, (week.volumeKg / maxVolume) * 100)}%`, backgroundColor: current ? colors.lime : 'rgba(200,240,49,0.35)' },
-                  ]}
-                />
-              </View>
-              <Text style={styles.barLabel}>{shortDate(week.weekStart)}</Text>
-            </View>
-          );
-        })}
-      </View>
-      <Body>Çubuk yüksekliği haftalık hacim (kilo × tekrar), üstteki sayı antrenman sayısı.</Body>
-    </Card>
-  );
-}
-
 function ExerciseChart({ exerciseId }: { exerciseId: number }) {
   const detail = useResource((token) => api.exerciseProgress(token, exerciseId));
   const data = detail.data;
@@ -103,13 +70,6 @@ function ExerciseChart({ exerciseId }: { exerciseId: number }) {
 }
 
 const styles = StyleSheet.create({
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  bars: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, height: 150 },
-  barColumn: { flex: 1, alignItems: 'center', gap: 4, height: '100%' },
-  barCount: { fontFamily: fonts.mono, fontSize: 11, color: colors.text },
-  barTrack: { flex: 1, width: '100%', justifyContent: 'flex-end', borderRadius: 8, backgroundColor: colors.surface2, overflow: 'hidden' },
-  bar: { width: '100%', borderRadius: 8 },
-  barLabel: { fontFamily: fonts.mono, fontSize: 10, color: colors.muted },
   chartTitle: { fontFamily: fonts.display, fontSize: 18, color: colors.text },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.md },
   rowSelected: { backgroundColor: colors.limeSoft },

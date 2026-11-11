@@ -12,6 +12,7 @@ import {
 import { gateSigner } from '../auth.ts';
 import { transaction, type Db } from '../db.ts';
 import { currentMembership, findMemberById, insertCheckin, isInside, presenceSeq, type MemberRow } from '../queries.ts';
+import { autoUnfreezeMember } from '../reception.ts';
 import { localDate } from '../time.ts';
 import { effectiveStatus } from './membership.ts';
 
@@ -57,7 +58,11 @@ function denialFor(db: Db, member: MemberRow, code: GateCode, now: Date, timeZon
     return inside ? null : 'not_inside';
   }
 
+  // Trainers work here: no membership to check, but the same anti-passback as everyone.
+  if (member.role === 'trainer') return inside ? 'already_inside' : null;
+
   const today = localDate(now, timeZone);
+  autoUnfreezeMember(db, member.id, { now, today });
   const membership = currentMembership(db, member.id, today);
   if (!membership) return 'no_membership';
   const status = effectiveStatus(membership.status, membership.ends_on, today);

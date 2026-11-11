@@ -10,6 +10,7 @@ import {
   type PaymentMethod,
   type PlanDto,
   type ReceptionSummary,
+  type TrainerOption,
 } from '../../../shared/contract';
 import { MemberCard, type MembershipAction } from '../components/reception/MemberCard';
 import { NewMemberPanel } from '../components/reception/NewMemberPanel';
@@ -32,6 +33,7 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
   const { token } = session;
   const [summary, setSummary] = useState<ReceptionSummary | null>(null);
   const [plans, setPlans] = useState<PlanDto[]>([]);
+  const [trainers, setTrainers] = useState<TrainerOption[]>([]);
   const [query, setQuery] = useState('');
   const [list, setList] = useState<MemberListItem[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -55,6 +57,10 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
 
   const loadSummary = useCallback(() => {
     api.receptionSummary(token).then(setSummary, (err: unknown) => setLoadError(describe(err)));
+  }, [token, describe]);
+
+  const loadTrainers = useCallback(() => {
+    api.trainers(token).then(setTrainers, (err: unknown) => setLoadError(describe(err)));
   }, [token, describe]);
 
   const loadList = useCallback(
@@ -96,8 +102,9 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
 
   useEffect(() => {
     loadSummary();
+    loadTrainers();
     api.plans(token).then(setPlans, (err: unknown) => setLoadError(describe(err)));
-  }, [token, loadSummary, describe]);
+  }, [token, loadSummary, loadTrainers, describe]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadList(query), query.trim() ? SEARCH_DELAY_MS : 0);
@@ -105,7 +112,8 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
   }, [query, loadList]);
 
   useLiveEvent((event: LiveEvent) => {
-    if (event.type === 'membership' || event.type === 'member') {
+    if (event.type === 'membership' || event.type === 'member' || event.type === 'training') {
+      if (event.type !== 'membership') loadTrainers();
       loadSummary();
       loadList(query);
       if (event.memberId === selectedId) loadDetail(event.memberId);
@@ -158,6 +166,8 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
       setBusy(false);
     }
   };
+  const assignTrainer = (trainerId: number | null) =>
+    detail ? run(() => api.assignTrainer(token, detail.member.id, trainerId)).then((ok) => (loadTrainers(), ok)) : Promise.resolve(false);
   const startRegistration = () => {
     selectedRef.current = null;
     setSelectedId(null);
@@ -192,7 +202,7 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
               aria-pressed={registering}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-bold transition ${registering ? 'border border-lime/60 bg-lime/10 text-lime' : 'bg-lime text-ink hover:brightness-105'}`}
             >
-              <UserPlus className="size-4" /> Yeni üye
+              <UserPlus className="size-4" /> Yeni hesap
             </button>
           </div>
           <div className="mb-2 mt-4 flex items-center justify-between">
@@ -215,8 +225,10 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
           <NewMemberPanel
             token={token}
             plans={plans}
+            staffRole={session.staff.role}
             describe={describe}
             onCreated={() => {
+              loadTrainers();
               loadSummary();
               loadList(query);
             }}
@@ -233,12 +245,15 @@ export function ReceptionPanel({ session, onUnauthorized, compact = false }: Pro
             onSell={sell}
             onAction={act}
             onIssueCode={issueCode}
+            trainers={trainers}
+            onAssignTrainer={assignTrainer}
+            onOpenMember={select}
           />
         ) : (
           <Card className="grid min-h-48 place-items-center text-center">
             <div>
               <p className="font-semibold text-text">{selectedId ? 'Üye yükleniyor' : 'Bir üye seçin'}</p>
-              <p className="mt-1 text-sm text-muted">Ad, soyad ya da telefonla arayın; listeden seçtiğiniz üyenin paketini satabilir, dondurabilir veya iptal edebilirsiniz. Salona ilk kez gelen için "Yeni üye".</p>
+              <p className="mt-1 text-sm text-muted">Ad, soyad ya da telefonla arayın; listeden seçtiğiniz üyenin paketini satabilir, dondurabilir veya iptal edebilirsiniz. Salona ilk kez gelen üye ya da yeni eğitmen için "Yeni hesap".</p>
               {actionError && <p className="mt-3 text-sm text-bad">{actionError}</p>}
             </div>
           </Card>

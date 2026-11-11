@@ -7,7 +7,7 @@ import { seedCatalog } from './catalog.ts';
 import { loadConfig } from './config.ts';
 import { openDb, transaction, type Db } from './db.ts';
 import { DEMO_MEMBER_PASSWORD, DEMO_MEMBER_PHONE, DEMO_STAFF as STAFF } from './demo.ts';
-import { KVKK_NOTICE_VERSION } from '../../shared/consent.ts';
+import { KVKK_NOTICE_VERSION, KVKK_TRAINER_NOTICE_VERSION } from '../../shared/consent.ts';
 import { registerMember } from './onboarding.ts';
 import { expiringMembers, listPlans, sellMembership } from './reception.ts';
 import { seedTrainingHistory } from './seed-training.ts';
@@ -60,6 +60,14 @@ const OPENING_HOUR = 7;
 const RENEWALS_TODAY = 4;
 // Registered at the desk today but has not opened the app yet: shows the onboarding flow.
 const NEW_MEMBER = { name: 'Selin Arıkan', phone: '5550000999' };
+// Trainer accounts (same demo password). The first one trains the demo member.
+const TRAINERS = [
+  { name: 'Hakan Koç', phone: '5550001001' },
+  { name: 'Derya Aksoy', phone: '5550001002' },
+] as const;
+const TRAINEES_PER_TRAINER = 20;
+/** Every this-many-th trainee has a programme their trainer assigned. */
+const ASSIGNED_PROGRAM_EVERY = 2;
 
 // mulberry32: tiny deterministic PRNG so every seed produces the same gym.
 function rng(seed: number): () => number {
@@ -198,6 +206,7 @@ async function main(): Promise<void> {
 
     const programIds = seedCatalog(db, now);
     const workouts = seedTrainingHistory(db, { memberId: 1, programId: programIds.get('hipertrofi-ust-alt') ?? 0, today });
+    seedTrainers(db, { passwordHash: memberHash, stamp, staffId: OWNER_ID, programIds: [...programIds.values()], secret: demoQrSecret });
     return { ...insertHistory(db, members, now, today, random), workouts };
   });
   const renewalsToday = sellTodaysRenewals(db, now, today, config.GYM_TIMEZONE, random);
@@ -205,6 +214,7 @@ async function main(): Promise<void> {
   await registerMember(
     db,
     {
+      role: 'member',
       fullName: NEW_MEMBER.name,
       phone: NEW_MEMBER.phone,
       noticeVersion: KVKK_NOTICE_VERSION,
@@ -220,6 +230,7 @@ async function main(): Promise<void> {
     JSON.stringify({
       seeded: config.DB_PATH,
       members: PERSONAS.length + GENERATED_MEMBERS + 1,
+      trainers: TRAINERS.map((trainer) => trainer.phone),
       notActivated: NEW_MEMBER.phone,
       checkins: summary.checkins,
       insideNow: summary.insideNow,
@@ -229,6 +240,46 @@ async function main(): Promise<void> {
       note: 'Demo şifresi ve PIN\'ler README.md içinde',
     }),
   );
+}
+
+/**
+ * Two trainers with their members. The demo member (id 1) belongs to the first trainer, who also
+ * assigned the programme the demo member is on; some other trainees have an assigned programme too.
+ */
+function seedTrainers(
+  db: Db,
+  input: { passwordHash: string; stamp: string; staffId: number; programIds: number[]; secret: () => string },
+): void {
+  const addTrainer = db.prepare(
+    `INSERT INTO members (role, full_name, phone, password_hash, qr_secret, created_at, modified_at, created_by, modified_by, activated_at)
+     VALUES ('trainer', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const consent = db.prepare(
+    "INSERT INTO member_consents (member_id, kind, version, granted, created_at, created_by) VALUES (?, 'notice', ?, 1, ?, ?)",
+  );
+  const assign = db.prepare('UPDATE members SET trainer_id = ?, modified_by = ? WHERE id = ?');
+  const enrol = db.prepare(
+    'INSERT INTO member_programs (member_id, program_id, next_day_index, started_at, created_at, modified_at, assigned_by) VALUES (?, ?, 1, ?, ?, ?, ?)',
+  );
+
+  TRAINERS.forEach((trainer, index) => {
+    const { stamp, staffId } = input;
+    const trainerId = Number(addTrainer.run(trainer.name, trainer.phone, input.passwordHash, input.secret(), stamp, stamp, staffId, staffId, stamp).lastInsertRowid);
+    consent.run(trainerId, KVKK_TRAINER_NOTICE_VERSION, stamp, staffId);
+
+    // Members 2.. in blocks; the first trainer also gets the demo member.
+    const first = 2 + index * TRAINEES_PER_TRAINER;
+    const trainees = Array.from({ length: TRAINEES_PER_TRAINER }, (_, i) => first + i);
+    if (index === 0) trainees.unshift(1);
+    trainees.forEach((memberId, i) => {
+      assign.run(trainerId, staffId, memberId);
+      if (memberId === 1) {
+        db.prepare('UPDATE member_programs SET assigned_by = ? WHERE member_id = 1 AND ended_at IS NULL').run(trainerId);
+      } else if (i % ASSIGNED_PROGRAM_EVERY === 0) {
+        enrol.run(memberId, input.programIds[i % input.programIds.length] ?? 1, stamp, stamp, stamp, trainerId);
+      }
+    });
+  });
 }
 
 function insertHistory(db: Db, members: SeedMember[], now: Date, today: string, random: () => number) {

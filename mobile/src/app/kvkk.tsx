@@ -2,8 +2,18 @@ import { router } from 'expo-router';
 import { ShieldCheck } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import type { ConsentDto } from '../../../shared/contract';
-import { KVKK_NOTICE_PARAGRAPHS, KVKK_NOTICE_TITLE, KVKK_NOTICE_VERSION, OPTIONAL_DATA_TEXT, OPTIONAL_DATA_TITLE } from '../../../shared/consent';
+import {
+  KVKK_NOTICE_PARAGRAPHS,
+  KVKK_NOTICE_TITLE,
+  KVKK_NOTICE_VERSION,
+  KVKK_TRAINER_NOTICE_PARAGRAPHS,
+  KVKK_TRAINER_NOTICE_TITLE,
+  KVKK_TRAINER_NOTICE_VERSION,
+  OPTIONAL_DATA_TEXT,
+  OPTIONAL_DATA_TITLE,
+} from '../../../shared/consent';
 import { api } from '@/lib/api';
+import { useSession } from '@/lib/session';
 import { useResource } from '@/lib/useResource';
 import { Body, Card, Label, Screen, ScreenHeader } from '@/ui/components';
 import { colors, fonts, space } from '@/ui/theme';
@@ -18,6 +28,12 @@ function consentText(consent: ConsentDto): string {
 /** Read-only: the texts and the decisions on record. Changes go through reception. */
 export default function KvkkScreen() {
   const consents = useResource(api.consents);
+  const { session, me } = useSession();
+  // Trainers were shown their own notice; the optional-data consent is a member matter.
+  const isTrainer = (me?.member.role ?? session?.member.role) === 'trainer';
+  const notice = isTrainer
+    ? { title: KVKK_TRAINER_NOTICE_TITLE, paragraphs: KVKK_TRAINER_NOTICE_PARAGRAPHS, version: KVKK_TRAINER_NOTICE_VERSION }
+    : { title: KVKK_NOTICE_TITLE, paragraphs: KVKK_NOTICE_PARAGRAPHS, version: KVKK_NOTICE_VERSION };
 
   return (
     <Screen refreshing={consents.loading} onRefresh={() => void consents.reload()}>
@@ -38,21 +54,22 @@ export default function KvkkScreen() {
             </View>
           </View>
         ))}
-        <Body style={styles.meta}>Rızanı geri almak ya da bilgilerini sildirmek için resepsiyona başvurabilirsin.</Body>
       </Card>
 
       <Card>
-        <Label>{`Aydınlatma metni · ${KVKK_NOTICE_VERSION}`}</Label>
-        <Text style={styles.heading}>{KVKK_NOTICE_TITLE}</Text>
-        {KVKK_NOTICE_PARAGRAPHS.map((paragraph) => (
+        <Label>{`Aydınlatma metni · ${notice.version}`}</Label>
+        <Text style={styles.heading}>{notice.title}</Text>
+        {notice.paragraphs.map((paragraph) => (
           <Body key={paragraph}>{paragraph}</Body>
         ))}
       </Card>
 
-      <Card>
-        <Label>{OPTIONAL_DATA_TITLE}</Label>
-        <Body>{OPTIONAL_DATA_TEXT}</Body>
-      </Card>
+      {!isTrainer && (
+        <Card>
+          <Label>{OPTIONAL_DATA_TITLE}</Label>
+          <Body>{OPTIONAL_DATA_TEXT}</Body>
+        </Card>
+      )}
     </Screen>
   );
 }

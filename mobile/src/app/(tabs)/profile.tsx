@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
-import { ChevronRight, LogOut, ShieldCheck, Wifi, WifiOff } from 'lucide-react-native';
+import { ChevronRight, LogOut, Pencil, ShieldCheck, Wifi, WifiOff } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { MEMBER_GOAL_TEXT } from '../../../../shared/contract';
-import { API_URL } from '@/lib/config';
+import { ACCOUNT_ROLE_TEXT, MEMBER_GENDER_TEXT, MEMBER_GOAL_TEXT } from '../../../../shared/contract';
+import { apiUrl } from '@/lib/config';
 import { useSession } from '@/lib/session';
 import { Body, Button, Card, Initials, Label, Screen, Title } from '@/ui/components';
 import { MEMBERSHIP_STATUS_TEXT, formatPhone, initials, longDate } from '@/ui/format';
@@ -12,6 +12,7 @@ export default function ProfileScreen() {
   const { session, me, liveConnected, signOut } = useSession();
   const member = me?.member ?? session?.member;
   if (!member) return null;
+  const isTrainer = member.role === 'trainer';
 
   return (
     <Screen>
@@ -20,16 +21,26 @@ export default function ProfileScreen() {
         <View style={{ flex: 1, gap: space.xs }}>
           <Title style={{ fontSize: 22 }}>{member.fullName}</Title>
           <Body>{formatPhone(member.phone)}</Body>
+          {isTrainer && <Label style={{ color: colors.lime }}>{ACCOUNT_ROLE_TEXT.trainer}</Label>}
         </View>
       </View>
 
-      <Card>
-        <Label>Bilgilerim</Label>
-        <Row label="Boy" value={member.heightCm ? `${member.heightCm} cm` : '-'} />
-        <Row label="Kilo" value={member.weightKg ? `${member.weightKg} kg` : '-'} />
-        <Row label="Doğum yılı" value={member.birthYear ? String(member.birthYear) : '-'} />
-        <Row label="Hedef" value={member.goal ? MEMBER_GOAL_TEXT[member.goal] : '-'} />
-      </Card>
+      {!isTrainer && (
+        <Card>
+          <View style={styles.row}>
+            <Label>Bilgilerim</Label>
+            <Pressable onPress={() => router.push('/profile-edit')} accessibilityRole="button" hitSlop={10} style={styles.inline}>
+              <Pencil size={14} color={colors.lime} />
+              <Text style={[styles.value, { color: colors.lime }]}>Düzenle</Text>
+            </Pressable>
+          </View>
+          <Row label="Boy" value={member.heightCm ? `${member.heightCm} cm` : '-'} />
+          <Row label="Kilo" value={member.weightKg ? `${member.weightKg} kg` : '-'} />
+          <Row label="Doğum yılı" value={member.birthYear ? String(member.birthYear) : '-'} />
+          <Row label="Cinsiyet" value={member.gender ? MEMBER_GENDER_TEXT[member.gender] : '-'} />
+          <Row label="Hedef" value={member.goal ? MEMBER_GOAL_TEXT[member.goal] : '-'} />
+        </Card>
+      )}
 
       {me?.membership && (
         <Card>
@@ -64,7 +75,7 @@ export default function ProfileScreen() {
             <Body>{liveConnected ? 'Canlı bağlantı açık' : 'Canlı bağlantı yok'}</Body>
           </View>
         </View>
-        <Text style={styles.mono}>{API_URL}</Text>
+        <Text style={styles.mono}>{apiUrl()}</Text>
       </Card>
 
       <Button title="Çıkış yap" variant="danger" onPress={() => void signOut()} icon={<LogOut size={18} color={colors.bad} />} />

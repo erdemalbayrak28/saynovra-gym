@@ -12,6 +12,7 @@ import { gymRoutes } from './routes/gym.ts';
 import { meRoutes } from './routes/me.ts';
 import { programRoutes } from './routes/programs.ts';
 import { staffRoutes } from './routes/staff.ts';
+import { trainerRoutes } from './routes/trainer.ts';
 
 export interface AppDeps {
   db: Db;
@@ -35,10 +36,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/gym', gymRoutes(deps));
   app.route('/gate', gateRoutes(deps));
   app.route('/staff', staffRoutes(deps));
+  app.route('/trainer', trainerRoutes(deps));
 
   app.notFound((c) => problemResponse(c, { type: 'about:blank', title: 'Bulunamadı', status: 404 }));
   app.onError((err, c) => {
-    if (err instanceof HttpProblem) return problemResponse(c, toProblem(err));
+    if (err instanceof HttpProblem) return problemResponse(c, toProblem(err), err.headers);
     log.error('unhandled request error', { method: c.req.method, path: c.req.path, ...errorFields(err) });
     return problemResponse(c, { type: 'about:blank', title: 'Sunucu hatası', status: 500 });
   });

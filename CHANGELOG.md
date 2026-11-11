@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-11-11 · Instagram reel: siberpunk sürüm
+
+- Yeni, ayrı bir reel: `reels-studio/cikti/saynovra-instagram-video-cyberpunk.mp4` (1080×1350, 30 fps, 46,5 sn, sessiz). Önceki astronotlu reel yerinde duruyor.
+- Telefon çerçevesi yok. Kamera neon bir şehrin içinden ileri uçar; ufukta dev bir gezegen, çevresinde dönen usturlap halkaları ve gezegenin etrafında dönen yıldız izleri var. Her sahne değişiminde kamera bir kapıdan geçer (parlama ve kısa glitch ile).
+- Altı özellik yolun üstünde hologram olarak çizilir: doluluk halkası ve saatlik tahmin, kendini yenileyen QR, set biten halter ile +2,5 kg ve dinlenme sayacı, takımyıldızı gibi çizilen hacim grafiği, buddy radarı ve eşleşme, çömelen iskelette diz açısı ile yarım tekrar ve hız kaybı uyarısı.
+- Kod `web/src/lib/cyber/` altında; metinler ve süreler `config.ts` dosyasında. Okunan her şey marka fontları ve lime ile; mor ve macenta yalnızca atmosferde.
+- Render betiği (`reels-studio/render.mjs`) yeniden düzenlendi: `node render.mjs cyber` yeni sürümü, parametresiz hâli eski reel'i üretir; `--stills=1,4.5` tek tek kare alır. Betik artık kendi klasöründen çalışır (sabit yol yok), Chrome profili geçici klasörde, tarayıcı susarsa 2 dakikada vazgeçer, kareler BT.709 olarak kodlanır.
+- SAYNOVRA logosu ortak bir dosyaya alındı (`web/src/lib/saynovraLogo.ts`) ve kendini çizen bir giriş animasyonu kazandı.
+
+## 2026-11-11 · Instagram reel: sinematik arka plan ve marka düzeni
+
+- Reel arka planı yenilendi (`web/src/lib/reelBackground.ts`): üç katmanlı, paralaks kayan yıldız alanı, yavaş bulutsu ışığı, yörüngeden görülen ay ufku, yüklenen astronot çiziminden kesilmiş ve süzülen astronot (`web/public/reel/astronaut-cutout.png`), hafif kamera itişi, vinyet ve film greni. Eski çizim ay yüzeyi ve astronot kodu kaldırıldı.
+- Logo marka SVG'sinden birebir çiziliyor (içi boş düğümler orta çubukta, lime noktalar uçlarda).
+- Yazılar marka fontlarıyla çıkıyor: render betiği Space Grotesk, Inter ve JetBrains Mono'yu yükleyip doğrulamadan kare çizmiyor. Başlıklarda sıkı harf aralığı, etiketlerde aralıklı mono büyük harf.
+- Renkler: turkuaz ve mavi vurgular lime'a çekildi; bilgi kartındaki trafik ışığı noktaları yerine lime kare ve mono etiket geldi. Metinler: "Yapay zekâ", slogan "Fikirden çalışan sisteme."
+
+## 2026-11-10 · Sprint 6: eğitmen, telefonda AI Form, güvenlik
+
+- AI Form beş hareket oldu: shoulder press (karşıdan, iki dirseğin ortalaması), biceps curl ve triceps pushdown eklendi. Yeni uyarılar: dirsek gövdeden uzaklaştı (gövde ile üst kol arası 30°'den fazla), curl'de gövde sallandı, altta ya da üstte kol tam açılmadı. Hareketler `shared/pose.ts` içinde veriyle tanımlanıyor; curl'de kaldırma süresi kapanma fazından ölçülüyor.
+- Kare kare analiz tek fonksiyona taşındı (`analyzeFrame`); web sayfası ve telefon aynı kodu çalıştırıyor.
+- Telefonda AI Form: kamera ve MediaPipe modeli uygulamanın içindeki web görünümünde (`react-native-webview` 14.0.1) telefonda çalışır, uygulamaya yalnızca iskelet noktaları gelir. Antrenman sekmesinde "AI Form" kartı, antrenmanda desteklenen harekette "Formunu AI ile kontrol et", ön/arka kamera geçişi. Emülatörde model yüklendi; kameranın web görünümünde açıldığı gerçek telefonda doğrulanmadı.
+- Eğitmen hesabı: resepsiyonda "Yeni hesap" ilk adımda Üye / Eğitmen sorar; eğitmeni yalnızca salon sahibi açar, eğitmene ayrı aydınlatma metni gösterilir, paket satılmaz. Üye kartından eğitmen atanır. Eğitmen uygulamada yalnızca kendi üyelerini görür (başkasınınki 404): salondakiler canlı, haftalık hacim, son antrenmanlar, rekorlar, program atama. Kapıdan üyelik aranmadan geçer.
+- Üye tarafı: Antrenman sekmesinde eğitmenin adı ve "Eğitmenin atadı" etiketi; atama canlı olayla (`training`) anında düşer. Üye programı değiştirirken eğitmenin atadığı programda önce onay sorulur.
+- Giriş deneme sınırı: personel PIN'i (aynı cihazdan 5), üye ve eğitmen girişi (aynı telefona 5, aynı cihazdan 20) ve kodla etkinleştirme (aynı cihazdan 10) 15 dakikada dolunca 15 dakika 429 döner, `Retry-After` ile. Sayaçlar sunucu belleğinde.
+- Profil düzenleme: üye boy, kilo, doğum yılı, cinsiyet ve hedefini uygulamadan günceller. Açık rızası yoksa düzenleme ekranında metni onaylayarak verir; rıza personelsiz kaydedilir.
+- Dondurma hakkı dolduğu gün üyelik kendiliğinden aktif olur (günler bitişe eklenir, yenileme kayar); sunucu açılışta ve 10 dakikada bir tarar, kapı da okutulan üyeyi tarar. İşlem geçmişinde "Otomatik" yazar.
+- Göç 6: `members.role`, `members.trainer_id` (tetikleyiciler eğitmeni doğrular, hesap türü değişmez), `member_programs.assigned_by`; `membership_events.created_by` yalnızca otomatik çözmede boş olabilir. Hareket bilgisine `slug` eklendi.
+- Örnek veri: iki eğitmen (Hakan Koç, Derya Aksoy), demo üye Hakan'a atanmış ve programını Hakan atamış; her eğitmene yaklaşık 20 üye.
+- Telefonda AI Form kamera izni artık Expo'nun kendi kamera modülüyle (`expo-camera`) isteniyor; Expo Go izni her proje için ayrı tuttuğu için genel Android isteği ekranı "Kamera izni bekleniyor"da bırakıyordu. İzin 15 saniyede yanıt vermezse ekran beklemek yerine "Tekrar dene / Ayarları aç" gösterir.
+- Eğitmen girişinde "Unmatched route" hatası düzeltildi: kök adres hesap türüne göre yönlendirir (üye ana sayfaya, eğitmen Üyelerim'e); üye ana sayfasının dosyası `(tabs)/home.tsx` oldu.
+- Testler 105'ten 125'e çıktı.
+
+## 2026-11-10 · KVKK metni
+
+- Rıza geri alma ürüne eklenmeyecek (kurucu kararı): açık rıza metninden "rızamı istediğim zaman resepsiyondan geri alabilirim" cümlesi ve uygulamanın KVKK ekranındaki geri alma notu kaldırıldı. Metin değiştiği için sürüm `2026-11-10` oldu; daha önce verilen rızalar `2026-11` sürümüyle kayıtlı kalır.
+- Sprint 6 planı `PLAN.md` içinde: eğitmen hesabı, telefonda AI Form ve üç yeni hareket (shoulder press, biceps curl, triceps pushdown), giriş deneme sınırı, profil düzenleme, dondurmanın kendiliğinden bitmesi.
+
 ## 2026-11-10 · Sprint 5: yeni üye kaydı
 
 - Resepsiyonda "Yeni üye": ad soyad ve telefon, KVKK, isteğe bağlı ilk paket, ardından ekranda 6 haneli etkinleştirme kodu. Telefon yazılırken numara kayıtlıysa uyarı ve "Üyeyi aç".

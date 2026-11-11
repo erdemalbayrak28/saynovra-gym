@@ -4,15 +4,13 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import {
   EXERCISES,
   NOTABLE_SLOWDOWN,
+  analyzeFrame,
   coaching,
-  countStep,
   countedReps,
   faultText,
-  newCounter,
-  readFrame,
+  newAnalysis,
   repFaults,
   slowdown,
-  smoothAngle,
   type Counter,
   type ExerciseId,
   type RepPhase,
@@ -37,13 +35,8 @@ interface View {
 /** The numbers on screen refresh at this rate; analysis itself runs on every video frame. */
 const UI_INTERVAL_MS = 100;
 const FPS_WINDOW_MS = 1000;
-const EMPTY_VIEW: View = { counter: newCounter(), angle: null, visible: false, fps: 0 };
-
-const PHASES: { phase: RepPhase; label: string }[] = [
-  { phase: 'top', label: 'Üstte' },
-  { phase: 'down', label: 'İniyor' },
-  { phase: 'bottom', label: 'Dipte' },
-];
+const EMPTY_VIEW: View = { counter: newAnalysis().counter, angle: null, visible: false, fps: 0 };
+const PHASES: RepPhase[] = ['top', 'down', 'bottom'];
 
 const TONE: Record<ReturnType<typeof coaching>['tone'], string> = {
   idle: 'border-line bg-ink/85 text-text',
@@ -60,7 +53,7 @@ export function FormCoach() {
   const objectUrlRef = useRef<string | null>(null);
   const exerciseRef = useRef<ExerciseId>('squat');
   // Per-frame state lives outside React; the screen gets a snapshot every UI_INTERVAL_MS.
-  const engine = useRef({ counter: newCounter(), angle: null as number | null, lastVideoTime: -1, lastUi: 0, frames: 0, fpsFrom: 0, fps: 0 });
+  const engine = useRef({ analysis: newAnalysis(), lastVideoTime: -1, lastUi: 0, frames: 0, fpsFrom: 0, fps: 0 });
 
   const [model, setModel] = useState<ModelState>({ kind: 'loading' });
   const [exercise, setExercise] = useState<ExerciseId>('squat');
@@ -99,8 +92,8 @@ export function FormCoach() {
   }, []);
 
   const resetCounter = useCallback(() => {
-    engine.current = { ...engine.current, counter: newCounter(), angle: null };
-    setView((current) => ({ ...current, counter: engine.current.counter, angle: null }));
+    engine.current = { ...engine.current, analysis: newAnalysis() };
+    setView((current) => ({ ...current, counter: engine.current.analysis.counter, angle: null }));
   }, []);
 
   const releaseSource = useCallback(() => {
@@ -205,15 +198,9 @@ export function FormCoach() {
 
       const now = performance.now();
       const landmarks = landmarker.detectForVideo(video, now).landmarks[0] ?? [];
-      const activeSpec = EXERCISES[exerciseRef.current];
-      const reading = landmarks.length > 0 ? readFrame(landmarks, activeSpec, video.videoWidth / video.videoHeight) : null;
-      if (reading) {
-        state.angle = smoothAngle(state.angle, reading.angle);
-        state.counter = countStep(state.counter, activeSpec, { angle: state.angle, at: now, leanDeg: reading.leanDeg });
-      } else {
-        state.angle = null;
-      }
-      drawPose(canvas, video, landmarks, reading, state.angle);
+      state.analysis = analyzeFrame(state.analysis, EXERCISES[exerciseRef.current], landmarks, video.videoWidth / video.videoHeight, now);
+      const { reading, angle, counter } = state.analysis;
+      drawPose(canvas, video, landmarks, reading, angle);
 
       state.frames++;
       if (now - state.fpsFrom >= FPS_WINDOW_MS) {
@@ -223,7 +210,7 @@ export function FormCoach() {
       }
       if (now - state.lastUi >= UI_INTERVAL_MS) {
         state.lastUi = now;
-        setView({ counter: state.counter, angle: state.angle, visible: reading !== null, fps: state.fps });
+        setView({ counter, angle, visible: reading !== null, fps: state.fps });
       }
     };
     frame = requestAnimationFrame(loop);
@@ -326,21 +313,21 @@ export function FormCoach() {
               {partial > 0 && <span className="text-sm text-bad">{partial} yarım</span>}
             </div>
             <div className="mt-4 grid grid-cols-3 gap-1 rounded-xl bg-ink p-1">
-              {PHASES.map(({ phase, label }) => (
+              {PHASES.map((phase) => (
                 <span
                   key={phase}
                   className={`rounded-lg py-1.5 text-center text-xs font-semibold ${running && counter.phase === phase ? 'bg-surface-2 text-lime' : 'text-muted'}`}
                 >
-                  {label}
+                  {spec.phases[phase]}
                 </span>
               ))}
             </div>
           </Card>
 
           <div className="grid grid-cols-2 gap-3">
-            <Metric label={spec.angleLabel} value={view.angle === null ? '-' : `${Math.round(view.angle)}°`} hint={`Dip ≤ ${spec.bottomAngle}°`} />
-            <Metric label="Son derinlik" value={lastCounted ? `${Math.round(lastCounted.minAngle)}°` : '-'} hint={spec.lockoutAngle ? `Kilit ≥ ${spec.lockoutAngle}°` : 'En dip açı'} />
-            <Metric label="Kaldırma" value={lastCounted ? `${(lastCounted.liftMs / 1000).toFixed(1).replace('.', ',')} sn` : '-'} hint="Dipten yukarı" />
+            <Metric label={spec.angleLabel} value={view.angle === null ? '-' : `${Math.round(view.angle)}°`} hint={`${spec.phases.bottom} ≤ ${spec.bottomAngle}°`} />
+            <Metric label={spec.texts.depthLabel} value={lastCounted ? `${Math.round(lastCounted.minAngle)}°` : '-'} hint={spec.lockoutAngle ? `Tam açılma ≥ ${spec.lockoutAngle}°` : 'En dip açı'} />
+            <Metric label="Kaldırma" value={lastCounted ? `${(lastCounted.liftMs / 1000).toFixed(1).replace('.', ',')} sn` : '-'} hint={spec.texts.liftLabel} />
             <Metric
               label="Yavaşlama"
               value={loss === null ? '-' : `%${Math.round(loss * 100)}`}

@@ -1,8 +1,10 @@
 import { ArrowLeft, ArrowRight, Check, UserPlus } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
+  ACCOUNT_ROLE_TEXT,
   MEMBER_GENDER_TEXT,
   MEMBER_GOAL_TEXT,
+  type AccountRole,
   type ActivationCodeResponse,
   type CreateMemberResponse,
   type MemberGender,
@@ -11,8 +13,18 @@ import {
   type NewMemberProfile,
   type PaymentMethod,
   type PlanDto,
+  type StaffRole,
 } from '../../../../shared/contract';
-import { KVKK_NOTICE_PARAGRAPHS, KVKK_NOTICE_TITLE, KVKK_NOTICE_VERSION, OPTIONAL_DATA_TEXT, OPTIONAL_DATA_TITLE } from '../../../../shared/consent';
+import {
+  KVKK_NOTICE_PARAGRAPHS,
+  KVKK_NOTICE_TITLE,
+  KVKK_NOTICE_VERSION,
+  KVKK_TRAINER_NOTICE_PARAGRAPHS,
+  KVKK_TRAINER_NOTICE_TITLE,
+  KVKK_TRAINER_NOTICE_VERSION,
+  OPTIONAL_DATA_TEXT,
+  OPTIONAL_DATA_TITLE,
+} from '../../../../shared/consent';
 import { ApiError, api } from '../../lib/api';
 import { money } from '../../lib/format';
 import { Card, Label } from '../ui';
@@ -20,12 +32,16 @@ import { ActivationCode } from './ActivationCode';
 import { PlanPicker } from './SalePanel';
 
 type Step = 'info' | 'kvkk' | 'package' | 'code';
-const STEPS: { id: Step; title: string }[] = [
-  { id: 'info', title: 'Bilgiler' },
-  { id: 'kvkk', title: 'KVKK' },
-  { id: 'package', title: 'Paket' },
-  { id: 'code', title: 'Kod' },
-];
+const STEP_TITLE: Record<Step, string> = { info: 'Bilgiler', kvkk: 'KVKK', package: 'Paket', code: 'Kod' };
+// A trainer account has no package.
+const STEPS: Record<AccountRole, Step[]> = {
+  member: ['info', 'kvkk', 'package', 'code'],
+  trainer: ['info', 'kvkk', 'code'],
+};
+const NOTICE = {
+  member: { title: KVKK_NOTICE_TITLE, paragraphs: KVKK_NOTICE_PARAGRAPHS, version: KVKK_NOTICE_VERSION, who: 'Üye' },
+  trainer: { title: KVKK_TRAINER_NOTICE_TITLE, paragraphs: KVKK_TRAINER_NOTICE_PARAGRAPHS, version: KVKK_TRAINER_NOTICE_VERSION, who: 'Eğitmen' },
+} as const;
 const DUPLICATE_CHECK_DELAY_MS = 300;
 
 /** Same normalisation as the server: "0555...", "+90 555..." and "555..." all become "555...". */
@@ -48,6 +64,8 @@ function optionalNumber(text: string, min: number, max: number, integer: boolean
 interface Props {
   token: string;
   plans: PlanDto[];
+  /** Only the owner may open trainer accounts. */
+  staffRole: StaffRole;
   describe: (err: unknown) => string;
   /** Account opened (the code step is showing); the list and summary refresh. */
   onCreated: (memberId: number) => void;
@@ -55,8 +73,11 @@ interface Props {
   onClose: () => void;
 }
 
-export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember, onClose }: Props) {
+export function NewMemberPanel({ token, plans, staffRole, describe, onCreated, onOpenMember, onClose }: Props) {
   const [step, setStep] = useState<Step>('info');
+  const [role, setRole] = useState<AccountRole>('member');
+  const isTrainer = role === 'trainer';
+  const notice = NOTICE[role];
   const [fullName, setFullName] = useState('');
   const [phoneText, setPhoneText] = useState('');
   const [existing, setExisting] = useState<MemberListItem | null>(null);
@@ -99,8 +120,9 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
     heightCm: optionalNumber(height, 120, 230, true),
     weightKg: optionalNumber(weight, 30, 250, false),
   };
-  const optionalValid = !optionalData || Object.values(parsed).every((value) => value !== 'invalid');
-  const profile: NewMemberProfile = optionalData
+  const withOptional = optionalData && !isTrainer;
+  const optionalValid = !withOptional || Object.values(parsed).every((value) => value !== 'invalid');
+  const profile: NewMemberProfile = withOptional
     ? {
         birthYear: parsed.birthYear === 'invalid' ? null : parsed.birthYear,
         heightCm: parsed.heightCm === 'invalid' ? null : parsed.heightCm,
@@ -117,12 +139,13 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
     setError(null);
     try {
       const response = await api.createMember(token, {
+        role,
         fullName: fullName.trim(),
         phone: nationalNumber,
-        noticeVersion: KVKK_NOTICE_VERSION,
-        consents: { notice: true, optionalData },
+        noticeVersion: notice.version,
+        consents: { notice: true, optionalData: withOptional },
         profile,
-        sale: plan ? { planId: plan.id, method } : null,
+        sale: plan && !isTrainer ? { planId: plan.id, method } : null,
       });
       setCreated(response);
       setActivation(response.activation);
@@ -156,8 +179,8 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
             <UserPlus className="size-5" />
           </span>
           <div>
-            <h2 className="font-display text-xl font-bold text-text">Yeni üye</h2>
-            <Label className="text-muted">Hesabı resepsiyon açar, şifreyi üye belirler</Label>
+            <h2 className="font-display text-xl font-bold text-text">{isTrainer ? 'Yeni eğitmen' : 'Yeni üye'}</h2>
+            <Label className="text-muted">Hesabı resepsiyon açar, şifreyi kişi kendi belirler</Label>
           </div>
         </div>
         {step !== 'code' && (
@@ -167,10 +190,36 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
         )}
       </div>
 
-      <Stepper current={step} />
+      <Stepper steps={STEPS[role]} current={step} />
 
       {step === 'info' && (
         <div className="space-y-4">
+          <div>
+            <Label className="text-muted">Hesap türü</Label>
+            <div className="mt-1.5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Hesap türü">
+              {(['member', 'trainer'] as const).map((option) => {
+                const locked = option === 'trainer' && staffRole !== 'owner';
+                const chosen = role === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="radio"
+                    aria-checked={chosen}
+                    disabled={locked}
+                    onClick={() => setRole(option)}
+                    className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${chosen ? 'border-lime bg-lime/10' : 'border-line bg-ink hover:border-muted'}`}
+                  >
+                    <span className={`block font-semibold ${chosen ? 'text-lime' : 'text-text'}`}>{ACCOUNT_ROLE_TEXT[option]}</span>
+                    <span className="mt-0.5 block text-xs text-muted">
+                      {option === 'member' ? 'Paket alır, antrenman yapar, kapıdan üyeliğiyle geçer.' : 'Kendi üyelerini izler, program atar; üyeliği olmaz.'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {staffRole !== 'owner' && <p className="mt-1.5 text-xs text-muted">Eğitmen hesabını yalnızca salon sahibi açabilir.</p>}
+          </div>
           <Field label="Ad soyad">
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={80} autoFocus className={INPUT} placeholder="Deniz Yılmaz" />
           </Field>
@@ -187,7 +236,7 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
               </button>
             </div>
           )}
-          <p className="text-xs text-muted">Kimlik numarası istenmez. Telefon, üyenin uygulamaya giriş numarası olur.</p>
+          <p className="text-xs text-muted">Kimlik numarası istenmez. Telefon, uygulamaya giriş numarası olur.</p>
           <Nav next={{ label: 'KVKK', disabled: !nameValid || !nationalNumber || existing !== null, onClick: () => setStep('kvkk') }} />
         </div>
       )}
@@ -195,23 +244,25 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
       {step === 'kvkk' && (
         <div className="space-y-4">
           <div className="max-h-56 overflow-y-auto rounded-xl border border-line bg-ink p-4">
-            <p className="font-semibold text-text">{KVKK_NOTICE_TITLE}</p>
-            {KVKK_NOTICE_PARAGRAPHS.map((paragraph) => (
+            <p className="font-semibold text-text">{notice.title}</p>
+            {notice.paragraphs.map((paragraph) => (
               <p key={paragraph} className="mt-2 text-sm text-muted">
                 {paragraph}
               </p>
             ))}
-            <Label className="mt-3 block text-muted">Metin sürümü {KVKK_NOTICE_VERSION}</Label>
+            <Label className="mt-3 block text-muted">Metin sürümü {notice.version}</Label>
           </div>
           <ConsentCheck checked={noticeRead} onChange={setNoticeRead} required>
-            Üye aydınlatma metnini okudu (zorunlu)
+            {notice.who} aydınlatma metnini okudu (zorunlu)
           </ConsentCheck>
-          <ConsentCheck checked={optionalData} onChange={setOptionalData}>
-            <span className="font-semibold text-text">{OPTIONAL_DATA_TITLE}</span>
-            <span className="mt-1 block text-xs text-muted">{OPTIONAL_DATA_TEXT}</span>
-          </ConsentCheck>
+          {!isTrainer && (
+            <ConsentCheck checked={optionalData} onChange={setOptionalData}>
+              <span className="font-semibold text-text">{OPTIONAL_DATA_TITLE}</span>
+              <span className="mt-1 block text-xs text-muted">{OPTIONAL_DATA_TEXT}</span>
+            </ConsentCheck>
+          )}
 
-          {optionalData && (
+          {withOptional && (
             <div className="grid gap-3 rounded-xl border border-line bg-ink p-4 sm:grid-cols-3">
               <Field label="Doğum yılı" hint={parsed.birthYear === 'invalid' ? '1920-2015' : undefined}>
                 <input value={birthYear} onChange={(e) => setBirthYear(e.target.value)} inputMode="numeric" maxLength={4} className={INPUT} placeholder="1994" />
@@ -226,7 +277,12 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
               <Choice label="Hedef" options={MEMBER_GOAL_TEXT} value={goal} onChange={setGoal} wide />
             </div>
           )}
-          <Nav back={() => setStep('info')} next={{ label: 'Paket', disabled: !noticeRead || !optionalValid, onClick: () => setStep('package') }} />
+          {isTrainer && error && <ErrorBox>{error}</ErrorBox>}
+          {isTrainer ? (
+            <Nav back={() => setStep('info')} next={{ label: busy ? 'Kaydediliyor' : 'Eğitmen hesabını aç', disabled: busy || !noticeRead, onClick: submit, final: true }} />
+          ) : (
+            <Nav back={() => setStep('info')} next={{ label: 'Paket', disabled: !noticeRead || !optionalValid, onClick: () => setStep('package') }} />
+          )}
         </div>
       )}
 
@@ -255,7 +311,7 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
         <div className="space-y-4">
           <p className="text-sm text-muted">
             <span className="font-semibold text-text">{created.detail.member.fullName}</span> kaydedildi
-            {created.detail.current ? `, ${created.detail.current.planName} paketi başladı.` : ', henüz paketi yok.'}
+            {isTrainer ? ' (eğitmen). Üye kartlarından üye atayabilirsiniz.' : created.detail.current ? `, ${created.detail.current.planName} paketi başladı.` : ', henüz paketi yok.'}
           </p>
           <ActivationCode activation={activation} memberPhone={created.detail.member.phone} busy={busy} onRenew={renew} />
           {error && <ErrorBox>{error}</ErrorBox>}
@@ -264,7 +320,7 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
             onClick={() => onOpenMember(created.detail.member.id)}
             className="w-full rounded-xl bg-lime px-4 py-2.5 text-sm font-bold text-ink transition hover:brightness-105"
           >
-            Üye kartını aç
+            {isTrainer ? 'Eğitmen kartını aç' : 'Üye kartını aç'}
           </button>
         </div>
       )}
@@ -275,17 +331,17 @@ export function NewMemberPanel({ token, plans, describe, onCreated, onOpenMember
 const INPUT =
   'w-full rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-text outline-none transition placeholder:text-muted focus:border-lime';
 
-function Stepper({ current }: { current: Step }) {
-  const index = STEPS.findIndex((s) => s.id === current);
+function Stepper({ steps, current }: { steps: Step[]; current: Step }) {
+  const index = steps.indexOf(current);
   return (
-    <ol className="grid grid-cols-4 gap-2" aria-label="Kayıt adımları">
-      {STEPS.map((s, i) => {
+    <ol className="flex gap-2" aria-label="Kayıt adımları">
+      {steps.map((id, i) => {
         const state = i < index ? 'done' : i === index ? 'current' : 'next';
         return (
-          <li key={s.id} aria-current={state === 'current' ? 'step' : undefined} className="min-w-0">
+          <li key={id} aria-current={state === 'current' ? 'step' : undefined} className="min-w-0 flex-1">
             <div className={`h-1 rounded-full ${state === 'next' ? 'bg-line' : 'bg-lime'}`} />
             <Label className={`mt-1.5 block truncate ${state === 'current' ? 'text-lime' : state === 'done' ? 'text-text' : 'text-muted'}`}>
-              {i + 1} · {s.title}
+              {i + 1} · {STEP_TITLE[id]}
             </Label>
           </li>
         );

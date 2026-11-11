@@ -1,10 +1,11 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { router } from 'expo-router';
-import { Check, Lightbulb, Minus, Plus, SkipForward, Trophy, X } from 'lucide-react-native';
+import { Check, Lightbulb, Minus, Plus, ScanLine, SkipForward, Trophy, X } from 'lucide-react-native';
 import { useCallback, useEffect, useReducer, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, Vibration, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import type { WorkoutDto, WorkoutItemPlan, WorkoutSummary } from '../../../shared/contract';
+import { FORM_EXERCISE_BY_SLUG } from '../../../shared/pose';
 import { ApiError, api } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { flowReducer, initFlow, progressOf, type Flow, type FlowEvent } from '@/lib/workout-flow';
@@ -216,6 +217,16 @@ function SetView({
         </Label>
         <Text style={styles.exercise}>{item.exercise.name}</Text>
         <Body>{`${item.exercise.muscleGroup} · ${item.exercise.equipment} · hedef ${setsText(item.targetSets, item.repMin, item.repMax)}`}</Body>
+        {FORM_EXERCISE_BY_SLUG[item.exercise.slug] && (
+          <Pressable
+            onPress={() => router.push({ pathname: '/form', params: { exercise: FORM_EXERCISE_BY_SLUG[item.exercise.slug] } })}
+            accessibilityRole="button"
+            style={styles.formLink}
+          >
+            <ScanLine size={16} color={colors.lime} />
+            <Text style={styles.formLinkText}>Formunu AI ile kontrol et</Text>
+          </Pressable>
+        )}
 
         {flow.cursor.setNo === 1 && (
           <View style={[styles.suggestion, suggestion.kind === 'deload' && { borderColor: 'rgba(77,184,255,0.45)' }]}>
@@ -410,6 +421,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  formLink: { flexDirection: 'row', alignItems: 'center', gap: space.sm, alignSelf: 'flex-start', paddingVertical: space.xs },
+  formLinkText: { fontFamily: fonts.bodySemi, fontSize: 13, color: colors.lime },
   header: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingTop: space.sm },
   // minWidth 0 lets single-line text shrink inside a row; without it the web build overflows.
   headerText: { flex: 1, minWidth: 0 },

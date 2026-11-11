@@ -6,7 +6,7 @@ import { requireRole, type AppEnv } from '../middleware.ts';
 import { isStaff } from '../auth.ts';
 import { scanGateCode } from '../domain/gate.ts';
 import { log } from '../log.ts';
-import { getCheckin, insideCount } from '../queries.ts';
+import { getCheckin, insideCount, trainerIdOf } from '../queries.ts';
 import { readJson } from '../problem.ts';
 import { leaveFloor } from '../social.ts';
 import { publishSocialChange } from '../social-events.ts';
@@ -26,7 +26,12 @@ export function gateRoutes({ db, config, live, now }: AppDeps): Hono<AppEnv> {
     if (!checkin) throw new Error(`Checkin ${scan.checkinId} missing right after insert`);
 
     const gym = { insideCount: insideCount(db, at), capacity: config.GYM_CAPACITY };
-    live.publish({ type: 'checkin', checkin, gym }, (claims) => isStaff(claims) || claims.sub === scan.memberId);
+    // Staff screens, the person who passed, and (for a member) their trainer's "in the gym" list.
+    const trainerId = scan.memberId !== null ? trainerIdOf(db, scan.memberId) : null;
+    live.publish(
+      { type: 'checkin', checkin, gym },
+      (claims) => isStaff(claims) || claims.sub === scan.memberId || (trainerId !== null && claims.role === 'trainer' && claims.sub === trainerId),
+    );
     if (scan.granted && scan.memberId !== null && checkin.direction === 'out') {
       publishSocialChange(live, leaveFloor(db, scan.memberId, at));
     }

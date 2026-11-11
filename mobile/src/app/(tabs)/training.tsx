@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
-import { ChartLine, Clock, Play, Repeat } from 'lucide-react-native';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ChartLine, ChevronRight, Clock, Play, Repeat, ScanLine, UserRound } from 'lucide-react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { PROGRAM_GOAL_TEXT, PROGRAM_LEVEL_TEXT, type MyTrainingResponse, type ProgramDayDto } from '../../../../shared/contract';
 import { api } from '@/lib/api';
+import { useLiveEvent, useSession } from '@/lib/session';
 import { useResource } from '@/lib/useResource';
 import { Body, Button, Card, Label, Pill, Screen, Title } from '@/ui/components';
 import { ProgramCard } from '@/ui/ProgramCard';
@@ -13,6 +14,11 @@ export default function TrainingScreen() {
   const training = useResource(api.training);
   const programs = useResource(api.programs);
   const data = training.data;
+  const { session } = useSession();
+  // The trainer assigned a programme, or reception changed the trainer: show it at once.
+  useLiveEvent((event) => {
+    if (event.type === 'training' && event.memberId === session?.member.id) void training.reload();
+  });
 
   return (
     <Screen refreshing={training.loading && data !== null} onRefresh={() => void training.reload()}>
@@ -20,6 +26,21 @@ export default function TrainingScreen() {
         <Label>Antrenman</Label>
         <Title>{data?.enrollment ? 'Bugün ne yapıyoruz?' : 'Bir program seç'}</Title>
       </View>
+
+      {data?.trainer && (
+        <Card>
+          <View style={styles.formRow}>
+            <UserRound size={18} color={colors.lime} />
+            <View style={{ flex: 1 }}>
+              <Label>Eğitmenin</Label>
+              <Text style={styles.formTitle}>{data.trainer.fullName}</Text>
+            </View>
+          </View>
+          <Body>Antrenmanlarını ve gelişimini görür, sana program atayabilir.</Body>
+        </Card>
+      )}
+
+      <FormCoachCard />
 
       {training.error && (
         <Card style={{ borderColor: 'rgba(255,90,79,0.35)', backgroundColor: colors.badSoft }}>
@@ -83,6 +104,7 @@ function EnrolledView({ data, nextDay }: { data: MyTrainingResponse; nextDay: Pr
           <Pill text={`Bu hafta ${data.weekWorkouts}`} color={colors.lime} background={colors.limeSoft} />
         </View>
         <Text style={styles.programName}>{enrollment.program.name}</Text>
+        {enrollment.assignedBy && <Pill text={`Eğitmenin atadı: ${enrollment.assignedBy.fullName}`} color={colors.info} background={colors.infoSoft} />}
         <Body>{`${PROGRAM_GOAL_TEXT[enrollment.program.goal]} · ${PROGRAM_LEVEL_TEXT[enrollment.program.level]} · haftada ${enrollment.program.daysPerWeek} gün`}</Body>
         <Body>{`${enrollment.completedWorkouts} antrenman tamamlandı`}</Body>
         <View style={styles.actions}>
@@ -98,7 +120,31 @@ function EnrolledView({ data, nextDay }: { data: MyTrainingResponse; nextDay: Pr
   );
 }
 
+/** Entry to the camera form coach; it works with or without a programme. */
+function FormCoachCard() {
+  return (
+    <Pressable onPress={() => router.push('/form')} accessibilityRole="button" accessibilityLabel="AI Form analizini aç">
+      <Card style={styles.formCard}>
+        <View style={styles.formRow}>
+          <View style={styles.formIcon}>
+            <ScanLine size={22} color={colors.ink} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.formTitle}>AI Form</Text>
+            <Body>Kamerayla tekrar say, derinliği ve kilitlemeyi ölç. Squat, bench, shoulder press, curl, pushdown.</Body>
+          </View>
+          <ChevronRight size={20} color={colors.muted} />
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  formCard: { borderColor: 'rgba(200,240,49,0.25)' },
+  formRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  formIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  formTitle: { fontFamily: fonts.display, fontSize: 18, color: colors.text },
   nextCard: { borderColor: 'rgba(200,240,49,0.4)' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
   inline: { flexDirection: 'row', alignItems: 'center', gap: 6 },

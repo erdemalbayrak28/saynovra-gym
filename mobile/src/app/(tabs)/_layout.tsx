@@ -4,12 +4,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSession } from '@/lib/session';
 import { colors, fonts } from '@/ui/theme';
 
-const ICONS = { index: House, training: Dumbbell, qr: QrCode, buddy: Users, profile: UserRound } as const;
+const ICONS = { home: House, training: Dumbbell, qr: QrCode, buddy: Users, profile: UserRound } as const;
 
 export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.ink } }} tabBar={(props) => <TabBar {...props} />}>
-      <Tabs.Screen name="index" options={{ title: 'Ana Sayfa' }} />
+      <Tabs.Screen name="home" options={{ title: 'Ana Sayfa' }} />
       <Tabs.Screen name="training" options={{ title: 'Antrenman' }} />
       <Tabs.Screen name="qr" options={{ title: 'QR Geçiş' }} />
       <Tabs.Screen name="buddy" options={{ title: 'Buddy' }} />

@@ -6,7 +6,7 @@ export type LiveState = 'connecting' | 'open' | 'offline';
 type Listener = (event: LiveEvent) => void;
 
 const MAX_BACKOFF_MS = 10_000;
-const KNOWN_TYPES = new Set<LiveEvent['type']>(['checkin', 'radar', 'spot_request', 'spot_message', 'floor', 'membership', 'member']);
+const KNOWN_TYPES = new Set<LiveEvent['type']>(['checkin', 'radar', 'spot_request', 'spot_message', 'floor', 'membership', 'member', 'training']);
 
 interface LiveValue {
   state: LiveState;

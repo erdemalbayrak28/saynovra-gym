@@ -64,6 +64,7 @@ const NO_PROFILE = { birthYear: null, gender: null, heightCm: null, weightKg: nu
 
 function request(overrides: Partial<CreateMemberRequest> = {}): CreateMemberRequest {
   return {
+    role: 'member',
     fullName: 'Deniz Yılmaz',
     phone: PHONE,
     noticeVersion: KVKK_NOTICE_VERSION,

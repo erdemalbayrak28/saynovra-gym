@@ -52,7 +52,7 @@ Telefon (aynı Wi-Fi, Expo Go)
 | Hata biçimi | RFC 7807 `application/problem+json` | |
 | QR imzası | HMAC-SHA256; sunucuda `node:crypto`, telefonda `@noble/hashes` | İki uygulamanın aynı sonucu verdiği testle doğrulanır |
 | QR okuma | Web: `getUserMedia` + `jsqr` (Windows Chrome'da `BarcodeDetector` yok) | |
-| Form analizi | MediaPipe Pose Landmarker, tarayıcıda, laptop kamerası | Expo Go özel yerel modül çalıştırmaz; telefonda yapılmaz |
+| Form analizi | MediaPipe Pose Landmarker; web'de tarayıcıda, telefonda uygulamanın içindeki web görünümünde (`react-native-webview`) | Expo Go özel yerel modül çalıştırmaz; web görünümü Expo Go'da da çalışır. Kurallar `shared/pose.ts` içinde, iki taraf aynı kodu kullanır |
 | Testler | `node --test` (yerleşik), gerçek SQLite (bellekte) | Sahte veritabanı yok |
 
 Gerçek ürüne geçişte değişecekler: SQLite yerine PostgreSQL, sunucunun internete açılması (HTTPS, hız sınırı), personel hesapları, KVKK açık rıza akışı, gerçek turnike rölesi.
@@ -115,6 +115,7 @@ Zamanlar UTC ISO 8601 metin. Üyelik tarihleri İstanbul takvim günü (`YYYY-MM
 | 3 (sprint 3) | `spotter_posts`, `spot_requests`, `spot_messages` |
 | 4 (sprint 4) | `membership_events` (satış, dondurma, çözme, iptal; tetikleyicilerle yalnızca eklenebilir, güncellenemez ve silinemez), `memberships.modified_by` |
 | 5 (sprint 5) | `member_activations` (tek kullanımlık etkinleştirme kodu), `member_consents` (KVKK rızası, yalnızca eklenebilir), `members.activated_at`, `members.session_epoch` |
+| 6 (sprint 6) | `members.role` (üye / eğitmen), `members.trainer_id`, `member_programs.assigned_by`; `membership_events.created_by` yalnızca otomatik dondurma bitişinde boş olabilir |
 
 Üyelik durum makinesi (tek fonksiyon, izin tablosu):
 
@@ -191,7 +192,7 @@ Salona ilk kez gelen kişi resepsiyonda kaydedilir, KVKK rızası alınır, ilk 
 
 **Sunucu**
 
-- Göç 5: `member_activations` (üye, kod özeti, son geçerlilik, yanlış deneme sayısı, kullanıldı/iptal zamanı, veren personel; üye başına tek açık kod, kısmi `UNIQUE` index), `member_consents` (üye, tür `notice` | `optional_data`, metin sürümü, verildi/geri alındı, zaman, personel; tetikleyicilerle yalnızca eklenebilir), `members.activated_at`, `members.session_epoch`. Mevcut üyeler `activated_at = created_at` ile doldurulur.
+- Göç 5: `member_activations` (üye, kod özeti, son geçerlilik, yanlış deneme sayısı, kullanıldı/iptal zamanı, veren personel; üye başına tek açık kod, kısmi `UNIQUE` index), `member_consents` (üye, tür `notice` | `optional_data`, metin sürümü, verildi/verilmedi, zaman, personel; tetikleyicilerle yalnızca eklenebilir), `members.activated_at`, `members.session_epoch`. Mevcut üyeler `activated_at = created_at` ile doldurulur.
 - Etkinleşmemiş üyenin `password_hash` alanı rastgele 32 baytın özetidir (sütun `NOT NULL`, bilinen bir şifreye karşılık gelmez).
 - `POST /staff/members`: kayıt + rıza + isteğe bağlı ilk satış, yanıtta üye detayı ve kod.
 - `POST /staff/members/:id/activation`: yeni kod.
@@ -221,7 +222,7 @@ Salona ilk kez gelen kişi resepsiyonda kaydedilir, KVKK rızası alınır, ilk 
 
 **Örnek veri:** mevcut üyeler etkin; bir kurgu üye "kayıt oldu, uygulamaya girmedi" durumunda gelir.
 
-**Kapsam dışı:** SMS ile kod gönderme, üyenin uygulamadan kendi kendine şifre sıfırlaması, fotoğraf, rıza geri alma ekranı (tabloda tür var, ekranı sonraki aşamada), sağlık beyanı formu.
+**Kapsam dışı:** SMS ile kod gönderme, üyenin uygulamadan kendi kendine şifre sıfırlaması, fotoğraf, sağlık beyanı formu. Rıza geri alma ürüne eklenmeyecek (kurucu kararı, 2026-11-10): rıza yalnızca kayıtta alınır ve değiştirilemez kayıt olarak kalır.
 
 - [x] Göç 5, `shared/consent.ts`, sözleşme tipleri
 - [x] Sunucu: kayıt, kod verme, etkinleştirme, oturum düşürme, açık kayıt ucunun kaldırılması + testler
@@ -230,8 +231,84 @@ Salona ilk kez gelen kişi resepsiyonda kaydedilir, KVKK rızası alınır, ilk 
 - [x] Örnek veri, README, CHANGELOG
 - [ ] Gerçek telefonda kayıttan kapıya deneme (kurucu)
 
+### Sprint 6: eğitmen, telefonda AI form, güvenlik ve eksik halkalar (kod bitti, 2026-11-10)
+
+**Kurucu kararları (2026-11-10):** eğitmen yalnızca kendisine atanan üyeleri görür; gelişimi görür, program atar, AI Form ile çeker, salondakileri görür. Telefondaki AI Form Expo Go içinde çalışır. Ek olarak giriş deneme sınırı, profil düzenleme, dondurmanın kendiliğinden bitmesi. Rıza geri alma yok, push bildirimi yok.
+
+**1. AI Form: beş hareket, web ve telefon**
+
+| Hareket | Kamera | Ölçülen açı | Tekrar: alt / üst eşik | Yarım tekrar | Ek kontrol |
+|---|---|---|---|---|---|
+| Squat (var) | Yandan | Diz | 100° / 160° | 100°'ye inmedi | Gövde dikeyden 50° fazla eğik |
+| Bench press (var) | Yandan, omuz hizası | Dirsek | 95° / 150°, kilit 165° | Göğse inmedi | Üstte kilit yok |
+| Shoulder press | Karşıdan, göğüs hizası | İki dirseğin ortalaması | 95° / 150°, kilit 165° | Omuz hizasına inmedi | Üstte kilit yok |
+| Biceps curl | Yandan | Dirsek (kapanarak kaldırılır) | 60° / 140°, tam açılma 155° | 60°'ye kadar kıvrılmadı | Altta kol açılmadı; dirsek öne kaydı (gövde ile üst kol arası 30°'den fazla); gövde sallandı (dikeyden 15°'den fazla) |
+| Triceps pushdown | Yandan | Dirsek | 100° / 145°, kilit 160° | Eller göğüs hizasına gelmedi | Altta kol kilitlenmedi; dirsek öne kaydı (30°'den fazla) |
+
+- `shared/pose.ts`: hareket tanımı veriye dönüşür (kaldırma yönü açılarak ya da kapanarak, kamera yönü, eşikler, kontroller, ekran metinleri). Curl'de kaldırma süresi kapanma fazından ölçülür. Kare kare analiz (açı, yumuşatma, sayaç) web ve telefonun birlikte kullandığı tek fonksiyona taşınır; web'deki kopya kalkar.
+- Antrenman hareketi → form hareketi eşlemesi: `squat`, `goblet-squat` → squat; `bench-press` → bench; `ohp`, `db-shoulder-press` → shoulder press; `biceps-curl`, `hammer-curl` → curl; `triceps-pushdown` → pushdown.
+- Telefon: yeni "AI Form" ekranı. Kamera ve MediaPipe modeli uygulamanın içindeki web görünümünde (`react-native-webview`, Expo Go'da var) telefonda çalışır; görüntü telefondan çıkmaz, kaydedilmez. Web görünümü uygulamaya yalnızca iskelet noktalarını iletir; tekrar sayımı ve uyarılar uygulamada `shared/pose.ts` ile. Ön ve arka kamera arasında geçiş (kendini çekme ya da eğitmenin üyesini çekmesi).
+- Model ve MediaPipe çalışma dosyaları ilk açılışta internetten iner: jsDelivr'de web ile aynı sabit sürüm (1.1.1) ve Google'ın model dosyası.
+- Girişler: Antrenman sekmesinde "AI Form" kartı; antrenman sırasında desteklenen harekette "Formunu kontrol et"; eğitmen uygulamasında ayrı sekme.
+- İlk iş fizibilite denemesi: Expo Go'daki web görünümünde kamera açılıyor mu (güvenli bağlam, izin). Açılmazsa durup haber veririm.
+
+**2. Eğitmen hesabı**
+
+- Resepsiyondaki "Yeni üye" paneli "Yeni hesap" olur; ilk adımda **Üye / Eğitmen** seçilir. Eğitmen hesabını yalnızca salon sahibi PIN'i açar (gişe hesabında seçenek kapalı, sunucu 403). Eğitmende paket adımı ve isteğe bağlı bilgiler yok; KVKK adımında eğitmene özel kısa aydınlatma metni (üyelik metni çalışana uymaz), ayrı sürümle.
+- Etkinleştirme aynı: 6 haneli kod, telefonda "Kodla etkinleştir". Uygulama girişte hesap türüne göre açılır.
+- Üye kartında **Eğitmen** seçimi (atanmamış ya da eğitmen listesi). Eğitmen kartında atanmış üyeler, hesap durumu ve rızalar; paket bölümü yok, eğitmene paket satılmaz (409).
+- Kapı: eğitmen üyelik aranmadan geçer; imza, süre, sıra ve anti-passback kontrolleri aynen. Kapı ekranında "Eğitmen" yazar.
+- Eğitmen uygulaması (Üyelerim, AI Form, QR Geçiş, Profil):
+  - Üyelerim: salondakiler en üstte ve canlı; her satırda program, bu haftaki antrenman sayısı, son antrenman.
+  - Üye ayrıntısı: haftalık antrenman sayısı ve hacim, son antrenmanlar, hareket başına rekorlar, mevcut program ve sıradaki gün; "Program ata" (hazır kütüphaneden).
+- Üye tarafı: Antrenman sekmesinde "Eğitmenin: Hakan K." ve eğitmenin atadığı programda "Eğitmenin atadı" etiketi; atama canlı olayla anında düşer. Üye programı yine kendisi değiştirebilir; eğitmenin atadığı programda önce onay sorulur, değişikliği eğitmen görür.
+- Erişim: eğitmen yalnızca kendisine atanan üyenin verisini görür ve programını değiştirir, başkasınınki 404. Buddy radarı ve antrenman kaydı yalnızca üyeler içindir (eğitmen token'ı 403).
+
+**3. Giriş deneme sınırı** (şu an 4 haneli personel PIN'i sınırsız denenebiliyor)
+
+| Uç | Sınır | Sonra |
+|---|---|---|
+| Personel PIN girişi | Aynı cihazdan 15 dakikada 5 yanlış | 15 dakika 429 |
+| Üye ve eğitmen girişi | Aynı telefona 15 dakikada 5 yanlış; aynı cihazdan 20 yanlış | 15 dakika 429 |
+| Kodla etkinleştirme | Aynı cihazdan 15 dakikada 10 yanlış (kodun kendi 5 deneme hakkına ek) | 15 dakika 429 |
+
+- 429 RFC 7807 biçiminde, `Retry-After` başlığıyla: "Çok fazla deneme. N dakika sonra tekrar dene." Başarılı giriş o telefonun sayacını sıfırlar. Cihaz, bağlantının IP adresidir (`X-Forwarded-For` okunmaz, araya vekil sunucu yok).
+- Sayaçlar sunucu belleğinde, ek paket yok. Sunucu yeniden başlayınca sıfırlanır; tek sunucu için yeterli, birden çok sunucuda ortak bir depo (Redis) gerekir.
+
+**4. Profil düzenleme**
+
+- Üye profilde doğum yılı, cinsiyet, boy, kilo ve hedefini günceller; değerler kayıttakiyle aynı aralıklarda doğrulanır. Yalnızca açık rıza verdiyse: vermediyse düzenleme ekranında açık rıza metnini onaylayarak verebilir (kaydı üye kendisi yaptığı için personelsiz yazılır). Eğitmende bu bölüm yok.
+
+**5. Dondurmanın kendiliğinden bitmesi**
+
+- Dondurma hakkı dolduğu gün üyelik kendiliğinden aktif olur: hak kadar gün bitişe eklenir, önceden satılan yenileme de kayar (elle kaldırmayla aynı kural). Sunucu açılışta ve 10 dakikada bir tarar; kapı da okutulan üyeyi tarar, hakkı dolan üye kapıda takılmaz. İşlem geçmişine "Otomatik" diye yazılır, canlı olayla telefona ve resepsiyona düşer.
+
+**Veri (göç 6)**
+
+- `members.role` (`member` | `trainer`), `members.trainer_id` (yalnızca üyede; tetikleyici, gösterdiği hesabın eğitmen olduğunu doğrular), `member_programs.assigned_by`.
+- `membership_events.created_by` yalnızca otomatik dondurma bitişinde boş olabilir (tablo yeniden kurulur, yalnızca-eklenebilir tetikleyiciler korunur).
+- `members` tablosu artık uygulama hesaplarını (üye ve eğitmen) tutar. Yeniden adlandırma bilinçli olarak yapılmadı (her katmana dokunur); hesap türünü `role` ayırır.
+
+**Örnek veri:** iki eğitmen, Hakan Koç (`5550001001`) ve Derya Aksoy (`5550001002`), demo şifresiyle. Demo üye Erdem Hakan'a atanmış, programı Hakan atamış görünür; her eğitmene yaklaşık 20 üye.
+
+**Testler (105 → 125):** yeni hareketlerin sayımı ve uyarıları, ortak analiz fonksiyonu; eğitmen yetkileri (yalnızca salon sahibi açar, yalnızca kendi üyesi, üye uçları kapalı), kapıda üyeliksiz geçiş, eğitmene satış reddi; deneme sınırı ve süre dolunca açılma; profil düzenleme ve rıza; kendiliğinden çözme ve yenilemenin kayması.
+
+**Riskler:** web görünümünde kamera Expo Go'da açılmazsa telefondaki AI Form için yerel derlemeye geçmek gerekir (ilk adımda denenecek). Emülatörün kamerası sanal bir oda gösterdiği için iskelet tespitini emülatörde doğrulayamam: tekrar sayımı testlerle doğrulanır, gerçek deneme senin telefonunda. Shoulder press karşıdan çekildiği için bel eğimi ölçülemez.
+
+**Sıra:**
+- [x] AI Form kuralları (beş hareket) ve web
+- [x] Telefonda AI Form: ekran, web görünümü ve analiz yazıldı. Emülatörde model yüklendi (güvenli bağlam ve indirme çalışıyor); kamera isteği emülatörde yanıtsız kaldı, nedeni bulunmadan kurucu denemeyi kendi telefonunda yapmak üzere durdurdu
+- [x] Eğitmen: göç 6, sunucu, testler
+- [x] Eğitmen: resepsiyon
+- [x] Eğitmen: uygulama ve üye tarafı (emülatörde ya da telefonda denenmedi)
+- [x] Giriş deneme sınırı
+- [x] Profil düzenleme (ekran denenmedi)
+- [x] Dondurmanın kendiliğinden bitmesi
+- [x] Örnek veri, README, CHANGELOG
+- [ ] Gerçek telefonda AI Form kamerası, eğitmen akışı ve profil düzenleme (kurucu)
+
 ---
 
 ## 7. Kapsam dışı
 
-Gerçek ödeme, mağaza yayını, sunucudan push bildirimi, grup dersi rezervasyonu, eğitmen hesabı, çoklu şube, internete açık sunucu, telefonda form analizi, üyenin kendi programını sıfırdan kurması (kurucu hazır program seçimini istedi; eğitmenin üyeye program ataması sonraki aşamada), iade ve kısmi ödeme, dondurma hakkı bitince kendiliğinden çözme.
+Gerçek ödeme, mağaza yayını, sunucudan push bildirimi (kurucu: şimdilik gerek yok), grup dersi rezervasyonu, çoklu şube, internete açık sunucu, üyenin ya da eğitmenin programı sıfırdan kurması (hazır kütüphaneden seçilir ve atanır), eğitmenle mesajlaşma ve not, iade ve kısmi ödeme, rıza geri alma (kurucu kararı).

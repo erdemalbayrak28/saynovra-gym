@@ -1,4 +1,4 @@
-import { Ban, CircleX, KeyRound, Receipt, ShieldCheck, Snowflake, Sun } from 'lucide-react';
+import { Ban, CircleX, Dumbbell, KeyRound, Receipt, ShieldCheck, Snowflake, Sun } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import {
   PAYMENT_METHOD_TEXT,
@@ -9,10 +9,11 @@ import {
   type PaymentMethod,
   type PlanDto,
   type StaffRole,
+  type TrainerOption,
 } from '../../../../shared/contract';
 import { calendarDate, dateTime, daysBetween, daysLeftText, gymToday, money, phone } from '../../lib/format';
 import { Card, Label } from '../ui';
-import { StatusPill } from './parts';
+import { RolePill, StatusPill } from './parts';
 import { ActivationCode } from './ActivationCode';
 import { SalePanel } from './SalePanel';
 
@@ -28,10 +29,14 @@ interface Props {
   onAction: (membershipId: number, action: MembershipAction) => Promise<boolean>;
   /** Hands out a new one-time code; null when it failed (the error is shown by the caller). */
   onIssueCode: () => Promise<ActivationCodeResponse | null>;
+  trainers: TrainerOption[];
+  onAssignTrainer: (trainerId: number | null) => Promise<boolean>;
+  onOpenMember: (memberId: number) => void;
 }
 
-export function MemberCard({ detail, plans, role, busy, error, onSell, onAction, onIssueCode }: Props) {
+export function MemberCard({ detail, plans, role, busy, error, onSell, onAction, onIssueCode, trainers, onAssignTrainer, onOpenMember }: Props) {
   const { member, current } = detail;
+  const isTrainer = member.role === 'trainer';
   return (
     <div className="space-y-4">
       <Card>
@@ -49,6 +54,7 @@ export function MemberCard({ detail, plans, role, busy, error, onSell, onAction,
             <span className={`size-1.5 rounded-full ${member.isInside ? 'bg-ok' : 'bg-muted'}`} />
             {member.isInside ? 'Salonda' : 'Dışarıda'}
           </span>
+          {isTrainer && <RolePill />}
           {!member.activated && <AppPill />}
         </div>
         <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4">
@@ -58,10 +64,18 @@ export function MemberCard({ detail, plans, role, busy, error, onSell, onAction,
         </dl>
       </Card>
 
-      <MembershipPanel key={current?.id ?? 'none'} detail={detail} plans={plans} role={role} busy={busy} error={error} onSell={onSell} onAction={onAction} />
+      {isTrainer ? (
+        <TraineesPanel detail={detail} error={error} onOpenMember={onOpenMember} />
+      ) : (
+        <>
+          <MembershipPanel key={current?.id ?? 'none'} detail={detail} plans={plans} role={role} busy={busy} error={error} onSell={onSell} onAction={onAction} />
+          <TrainerPanel detail={detail} trainers={trainers} busy={busy} onAssignTrainer={onAssignTrainer} />
+        </>
+      )}
 
       <AccountPanel key={member.id} detail={detail} busy={busy} onIssueCode={onIssueCode} />
 
+      {!isTrainer && (
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <Label className="text-text">İşlem geçmişi</Label>
@@ -77,7 +91,74 @@ export function MemberCard({ detail, plans, role, busy, error, onSell, onAction,
           </ol>
         )}
       </Card>
+      )}
     </div>
+  );
+}
+
+/** Which trainer follows this member; the trainer sees the member's training in the app. */
+function TrainerPanel({ detail, trainers, busy, onAssignTrainer }: { detail: MemberDetail; trainers: TrainerOption[]; busy: boolean; onAssignTrainer: Props['onAssignTrainer'] }) {
+  const current = detail.trainer?.id ?? null;
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Dumbbell className="size-4 text-lime" />
+          <Label className="text-text">Eğitmen</Label>
+        </div>
+        <select
+          value={current ?? ''}
+          disabled={busy || trainers.length === 0}
+          onChange={(event) => void onAssignTrainer(event.target.value === '' ? null : Number(event.target.value))}
+          aria-label="Eğitmen seç"
+          className="min-w-48 rounded-xl border border-line bg-ink px-3 py-2 text-sm text-text outline-none transition focus:border-lime disabled:opacity-40"
+        >
+          <option value="">Atanmamış</option>
+          {trainers.map((trainer) => (
+            <option key={trainer.id} value={trainer.id}>
+              {`${trainer.fullName} (${trainer.traineeCount} üye)`}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        {trainers.length === 0
+          ? 'Henüz eğitmen hesabı yok. Salon sahibi "Yeni hesap" ile eğitmen açabilir.'
+          : detail.trainer
+            ? `${detail.trainer.fullName} bu üyenin antrenmanlarını ve gelişimini uygulamada görür, program atayabilir.`
+            : 'Eğitmen atanınca üyenin antrenman verisini yalnızca o eğitmen görür.'}
+      </p>
+    </Card>
+  );
+}
+
+function TraineesPanel({ detail, error, onOpenMember }: { detail: MemberDetail; error: string | null; onOpenMember: (memberId: number) => void }) {
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <Label className="text-text">Üyeleri</Label>
+        <Label className="text-muted">{`${detail.trainees.length} üye`}</Label>
+      </div>
+      {detail.trainees.length === 0 ? (
+        <p className="text-sm text-muted">Henüz atanmış üyesi yok. Bir üyenin kartındaki "Eğitmen" bölümünden atayın.</p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {detail.trainees.map((trainee) => (
+            <li key={trainee.id}>
+              <button
+                type="button"
+                onClick={() => onOpenMember(trainee.id)}
+                className="rounded-full border border-line bg-ink px-3 py-1.5 text-sm text-text transition hover:border-lime hover:text-lime"
+              >
+                {trainee.fullName}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-xs text-muted">Eğitmen hesabında paket ve üyelik yoktur; kapıdan üyelik aranmadan geçer.</p>
+      {error && <p className="mt-3 rounded-xl border border-bad/30 bg-bad/10 px-3 py-2 text-sm text-bad" role="alert">{error}</p>}
+    </Card>
   );
 }
 
@@ -152,7 +233,15 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 type Panel = 'none' | 'sale' | 'cancel';
 
-function MembershipPanel({ detail, plans, role, busy, error, onSell, onAction }: Omit<Props, 'detail' | 'onIssueCode'> & { detail: MemberDetail }) {
+function MembershipPanel({
+  detail,
+  plans,
+  role,
+  busy,
+  error,
+  onSell,
+  onAction,
+}: Pick<Props, 'plans' | 'role' | 'busy' | 'error' | 'onSell' | 'onAction'> & { detail: MemberDetail }) {
   const [panel, setPanel] = useState<Panel>('none');
   const current = detail.current;
   const upcoming = detail.memberships.filter((m) => m.upcoming && m.status === 'active');
@@ -295,7 +384,7 @@ const EVENT_TEXT: Record<MembershipEventDto['type'], (event: MembershipEventDto)
   }),
   freeze: (event) => ({ title: 'Üyelik donduruldu', detail: event.planName }),
   unfreeze: (event) => ({
-    title: 'Dondurma kaldırıldı',
+    title: event.staffName === null ? 'Dondurma hakkı doldu, üyelik yeniden aktif' : 'Dondurma kaldırıldı',
     detail: event.days ? `Bitiş tarihine ${event.days} gün eklendi` : 'Aynı gün kaldırıldı, gün eklenmedi',
   }),
   cancel: (event) => ({ title: 'Üyelik iptal edildi', detail: event.planName }),
@@ -316,7 +405,7 @@ function HistoryRow({ event }: { event: MembershipEventDto }) {
       </div>
       <div className="shrink-0 text-right">
         <p className="text-xs text-text">{dateTime(event.at)}</p>
-        <p className="text-xs text-muted">{event.staffName}</p>
+        <p className="text-xs text-muted">{event.staffName ?? 'Otomatik'}</p>
       </div>
     </li>
   );
