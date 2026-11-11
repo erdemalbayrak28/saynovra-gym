@@ -1,9 +1,14 @@
 import type {
+  AccountRole,
   CheckinDto,
+  ConsentDto,
+  ConsentKind,
   GateDenyReason,
   GateDirection,
+  MemberGender,
   MemberGoal,
   MemberProfile,
+  PersonRef,
   MembershipStatus,
   StaffRole,
 } from '../../shared/contract.ts';
@@ -20,14 +25,19 @@ export const INSIDE_TIMEOUT_HOURS = 4;
 
 export interface MemberRow {
   id: number;
+  role: AccountRole;
+  /** The member's trainer; always null for trainers. */
+  trainer_id: number | null;
   full_name: string;
   phone: string;
   password_hash: string;
   birth_year: number | null;
+  gender: MemberGender | null;
   height_cm: number | null;
   weight_kg: number | null;
   goal: MemberGoal | null;
   qr_secret: string;
+  session_epoch: number;
 }
 
 export interface StaffRow {
@@ -52,6 +62,7 @@ interface CheckinJoinRow {
   result: 'granted' | 'denied';
   reason: GateDenyReason | null;
   member_id: number | null;
+  member_role: AccountRole | null;
   full_name: string | null;
   plan_name: string | null;
   ends_on: string | null;
@@ -61,7 +72,8 @@ interface CheckinJoinRow {
 // Members and staff
 // ---------------------------------------------------------------------------
 
-const MEMBER_COLUMNS = 'id, full_name, phone, password_hash, birth_year, height_cm, weight_kg, goal, qr_secret';
+const MEMBER_COLUMNS =
+  'id, role, trainer_id, full_name, phone, password_hash, birth_year, gender, height_cm, weight_kg, goal, qr_secret, session_epoch';
 
 export function findMemberById(db: Db, id: number): MemberRow | undefined {
   return db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE id = ?`).get(id) as MemberRow | undefined;
@@ -71,6 +83,56 @@ export function findMemberByPhone(db: Db, phone: string): MemberRow | undefined 
   return db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE phone = ?`).get(phone) as MemberRow | undefined;
 }
 
+/** Name of an account by id, for "your trainer" and "assigned by" lines. */
+export function personRef(db: Db, id: number | null): PersonRef | null {
+  if (id === null) return null;
+  const row = db.prepare('SELECT id, full_name FROM members WHERE id = ?').get(id) as { id: number; full_name: string } | undefined;
+  return row ? { id: row.id, fullName: row.full_name } : null;
+}
+
+/** The trainer assigned to a member, if any. */
+export function trainerIdOf(db: Db, memberId: number): number | null {
+  const row = db.prepare('SELECT trainer_id FROM members WHERE id = ?').get(memberId) as { trainer_id: number | null } | undefined;
+  return row?.trainer_id ?? null;
+}
+
+/** True when explicit consent for the optional profile fields is the latest decision on record. */
+export function hasOptionalDataConsent(db: Db, memberId: number): boolean {
+  const row = db
+    .prepare("SELECT granted FROM member_consents WHERE member_id = ? AND kind = 'optional_data' ORDER BY id DESC LIMIT 1")
+    .get(memberId) as { granted: number } | undefined;
+  return row?.granted === 1;
+}
+
+/** KVKK decisions, newest first. */
+export function memberConsents(db: Db, memberId: number): ConsentDto[] {
+  const rows = db
+    .prepare(
+      `SELECT c.kind, c.version, c.granted, c.created_at, s.name AS staff_name
+       FROM member_consents c LEFT JOIN staff s ON s.id = c.created_by
+       WHERE c.member_id = ? ORDER BY c.id DESC`,
+    )
+    .all(memberId) as unknown as { kind: ConsentKind; version: string; granted: number; created_at: string; staff_name: string | null }[];
+  return rows.map((row) => ({ kind: row.kind, version: row.version, granted: row.granted === 1, at: row.created_at, staffName: row.staff_name }));
+}
+
+/** Expiry of the member's activation code if one is open and not yet expired. */
+export function openActivationExpiry(db: Db, memberId: number, now: Date): string | null {
+  const row = db
+    .prepare(
+      `SELECT expires_at FROM member_activations
+       WHERE member_id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
+    )
+    .get(memberId, now.toISOString()) as { expires_at: string } | undefined;
+  return row?.expires_at ?? null;
+}
+
+/** The member's current session epoch, or undefined if the member no longer exists. */
+export function memberSessionEpoch(db: Db, memberId: number): number | undefined {
+  const row = db.prepare('SELECT session_epoch FROM members WHERE id = ?').get(memberId) as { session_epoch: number } | undefined;
+  return row?.session_epoch;
+}
+
 export function listStaff(db: Db): StaffRow[] {
   return db.prepare('SELECT id, name, role, pin_hash FROM staff ORDER BY id').all() as unknown as StaffRow[];
 }
@@ -78,9 +140,11 @@ export function listStaff(db: Db): StaffRow[] {
 export function toProfile(row: MemberRow): MemberProfile {
   return {
     id: row.id,
+    role: row.role,
     fullName: row.full_name,
     phone: row.phone,
     birthYear: row.birth_year,
+    gender: row.gender,
     heightCm: row.height_cm,
     weightKg: row.weight_kg,
     goal: row.goal,
@@ -114,14 +178,25 @@ export function currentMembership(db: Db, memberId: number, today: string): Memb
 // Presence
 // ---------------------------------------------------------------------------
 
-export function lastGrantedCheckin(db: Db, memberId: number): { direction: GateDirection; created_at: string } | undefined {
+export interface GrantedCheckin {
+  id: number;
+  direction: GateDirection;
+  created_at: string;
+}
+
+export function lastGrantedCheckin(db: Db, memberId: number): GrantedCheckin | undefined {
   return db
     .prepare(
-      `SELECT direction, created_at FROM checkins
+      `SELECT id, direction, created_at FROM checkins
        WHERE member_id = ? AND result = 'granted'
        ORDER BY created_at DESC, id DESC LIMIT 1`,
     )
-    .get(memberId) as { direction: GateDirection; created_at: string } | undefined;
+    .get(memberId) as GrantedCheckin | undefined;
+}
+
+/** The gate-code sequence: id of the last granted pass, 0 before the first one. */
+export function presenceSeq(db: Db, memberId: number): number {
+  return lastGrantedCheckin(db, memberId)?.id ?? 0;
 }
 
 export function isInside(db: Db, memberId: number, now: Date): boolean {
@@ -129,18 +204,22 @@ export function isInside(db: Db, memberId: number, now: Date): boolean {
   return last?.direction === 'in' && last.created_at > hoursAgo(now, INSIDE_TIMEOUT_HOURS);
 }
 
+// SQLite returns the bare `direction` from the row that holds MAX(created_at).
+const INSIDE_SQL = `
+  SELECT member_id FROM (
+    SELECT member_id, direction, MAX(created_at) AS at FROM checkins
+    WHERE result = 'granted' AND created_at > ?
+    GROUP BY member_id
+  ) WHERE direction = 'in'`;
+
 export function insideCount(db: Db, now: Date): number {
-  // SQLite returns the bare `direction` from the row that holds MAX(created_at).
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM (
-         SELECT member_id, direction, MAX(created_at) AS at FROM checkins
-         WHERE result = 'granted' AND created_at > ?
-         GROUP BY member_id
-       ) WHERE direction = 'in'`,
-    )
-    .get(hoursAgo(now, INSIDE_TIMEOUT_HOURS)) as { n: number };
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM (${INSIDE_SQL})`).get(hoursAgo(now, INSIDE_TIMEOUT_HOURS)) as { n: number };
   return row.n;
+}
+
+export function insideMemberIds(db: Db, now: Date): Set<number> {
+  const rows = db.prepare(INSIDE_SQL).all(hoursAgo(now, INSIDE_TIMEOUT_HOURS)) as unknown as { member_id: number }[];
+  return new Set(rows.map((row) => row.member_id));
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +246,7 @@ export function insertCheckin(
 }
 
 const CHECKIN_SELECT = `
-  SELECT c.id, c.created_at, c.direction, c.result, c.reason, c.member_id, mb.full_name,
+  SELECT c.id, c.created_at, c.direction, c.result, c.reason, c.member_id, mb.role AS member_role, mb.full_name,
     (SELECT p.name FROM memberships ms JOIN plans p ON p.id = ms.plan_id
       WHERE ms.member_id = c.member_id AND ms.starts_on <= :today
       ORDER BY ms.ends_on DESC, ms.id DESC LIMIT 1) AS plan_name,
@@ -187,6 +266,7 @@ function toCheckinDto(row: CheckinJoinRow, today: string): CheckinDto {
       row.member_id !== null && row.full_name !== null
         ? {
             id: row.member_id,
+            role: row.member_role ?? 'member',
             fullName: row.full_name,
             initials: initials(row.full_name),
             planName: row.plan_name,

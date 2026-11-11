@@ -35,7 +35,10 @@ function RootNavigator() {
     Inter_700Bold,
     JetBrainsMono_500Medium,
   });
-  const { status } = useSession();
+  const { status, session, me } = useSession();
+  // Sessions saved before trainers existed carry no role: those are members.
+  const role = me?.member.role ?? session?.member.role ?? 'member';
+  const signedIn = status === 'signedIn';
   // A font failure falls back to system fonts rather than blocking the app.
   const ready = (fontsLoaded || fontError !== null) && status !== 'restoring';
 
@@ -49,11 +52,27 @@ function RootNavigator() {
     <ThemeProvider value={theme}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.ink } }}>
-        <Stack.Protected guard={status === 'signedIn'}>
+        <Stack.Screen name="index" />
+        <Stack.Protected guard={signedIn && role === 'member'}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="programs" />
+          <Stack.Screen name="program/[id]" />
+          <Stack.Screen name="workout" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="progress" />
+          <Stack.Screen name="chat/[id]" />
+          <Stack.Screen name="form" />
+          <Stack.Screen name="profile-edit" />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn && role === 'trainer'}>
+          <Stack.Screen name="(coach)" />
+          <Stack.Screen name="trainee/[id]" />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn}>
+          <Stack.Screen name="kvkk" />
         </Stack.Protected>
         <Stack.Protected guard={status !== 'signedIn'}>
           <Stack.Screen name="login" />
+          <Stack.Screen name="activate" />
         </Stack.Protected>
       </Stack>
     </ThemeProvider>

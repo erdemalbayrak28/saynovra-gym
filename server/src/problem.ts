@@ -9,18 +9,28 @@ export class HttpProblem extends Error {
   readonly title: string;
   readonly detail: string | undefined;
   readonly errors: Problem['errors'];
+  /** Extra response headers, e.g. Retry-After on 429. */
+  readonly headers: Readonly<Record<string, string>>;
 
-  constructor(status: ContentfulStatusCode, title: string, detail?: string, errors?: Problem['errors']) {
+  constructor(
+    status: ContentfulStatusCode,
+    title: string,
+    detail?: string,
+    errors?: Problem['errors'],
+    headers: Readonly<Record<string, string>> = {},
+  ) {
     super(detail ?? title);
     this.status = status;
     this.title = title;
     this.detail = detail;
     this.errors = errors;
+    this.headers = headers;
   }
 }
 
-export function problemResponse(c: Context, problem: Problem): Response {
+export function problemResponse(c: Context, problem: Problem, headers: Readonly<Record<string, string>> = {}): Response {
   return c.body(JSON.stringify(problem), problem.status as ContentfulStatusCode, {
+    ...headers,
     'Content-Type': 'application/problem+json',
   });
 }

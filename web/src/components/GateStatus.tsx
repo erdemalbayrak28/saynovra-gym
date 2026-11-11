@@ -43,7 +43,7 @@ function content(view: GateView): { badge: string; title: string; detail: string
       return {
         badge: entering ? 'Giriş onaylandı' : 'Çıkış onaylandı',
         title: entering ? `Hoş geldin, ${name}` : `Görüşmek üzere, ${name}`,
-        detail: member?.planName ? `${member.planName} üyelik · ${daysLeftText(member.daysLeft)}` : '',
+        detail: member?.role === 'trainer' ? 'Eğitmen' : member?.planName ? `${member.planName} üyelik · ${daysLeftText(member.daysLeft)}` : '',
       };
     }
     case 'denied':

@@ -5,18 +5,24 @@ import type { AppDeps } from '../app.ts';
 import { requireRole, type AppEnv } from '../middleware.ts';
 import { checkinCountsSince, insideCount, recentCheckins } from '../queries.ts';
 import { validate } from '../problem.ts';
+import { floorFeed } from '../social.ts';
 import { localDate, startOfLocalDay } from '../time.ts';
+import { receptionRoutes } from './reception.ts';
 
 const checkinsQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) });
 
-export function staffRoutes({ db, config, now }: AppDeps): Hono<AppEnv> {
+export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
+  const { db, config, now } = deps;
   const routes = new Hono<AppEnv>();
-  routes.use('*', requireRole(config.JWT_SECRET, 'owner', 'desk'));
+  routes.use('*', requireRole({ secret: config.JWT_SECRET, db }, 'owner', 'desk'));
+  routes.route('/', receptionRoutes(deps));
 
   routes.get('/checkins', (c) => {
     const { limit } = validate(checkinsQuery, c.req.query());
     return c.json(recentCheckins(db, limit, localDate(now(), config.GYM_TIMEZONE)));
   });
+
+  routes.get('/floor', (c) => c.json(floorFeed(db, now())));
 
   routes.get('/summary', (c) => {
     const at = now();

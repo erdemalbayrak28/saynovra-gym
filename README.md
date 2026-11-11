@@ -6,9 +6,9 @@ Yalnızca yerelde çalışır: bilgisayar ve aynı Wi-Fi'daki telefon. Plan ve k
 | Klasör | Ne | Teknoloji |
 |---|---|---|
 | `server/` | API, veritabanı, QR doğrulama, canlı olaylar | Node 24, Hono, SQLite (`node:sqlite`), WebSocket |
-| `web/` | Kapı ekranı (kamera ile QR okuma, geçiş kayıtları) | Vite, React, Tailwind |
-| `mobile/` | Üye uygulaması (giriş, ana sayfa, QR, profil) | Expo SDK 58, expo-router |
-| `shared/` | Ortak sözleşme: API tipleri, QR kod biçimi, ret nedenleri | Bağımlılıksız TypeScript |
+| `web/` | Personel ekranları: kapı (kamera ile QR okuma), resepsiyon, AI form analizi, ikili görünüm | Vite, React, Tailwind, MediaPipe |
+| `mobile/` | Üye uygulaması (giriş, ana sayfa, QR, antrenman, gelişim, buddy radarı, sohbet, profil) | Expo SDK 58, expo-router |
+| `shared/` | Ortak sözleşme (API tipleri, QR kod biçimi, ret nedenleri) ve form analizi kuralları | Bağımlılıksız TypeScript |
 
 ## Çalıştırma
 
@@ -41,6 +41,50 @@ cd mobile; npx expo start
 
 Telefonsuz prova: kapı ekranındaki "Test araçları" ile kod yapıştırılabilir veya sahte imzalı kod denenebilir.
 
+### Antrenman
+1. Telefonda "Antrenman" sekmesi: demo üye "Hipertrofi: Üst / Alt" programında, 4 haftalık geçmişi var.
+2. "Antrenmana başla": uygulama hareketi, seti, önerilen kiloyu ve tekrarı gösterir. Seti yapınca "Seti tamamladım", dinlenme sayacı kendiliğinden başlar.
+3. Bitirince özet çıkar, program sonraki güne geçer. "Gelişimim" haftalık hacmi ve kilo grafiğini gösterir; "Değiştir" ile başka bir program seçilir.
+
+### Buddy radarı
+1. Önce kapıdan giriş yap: radar yalnızca salondakilere açık.
+2. "Buddy" sekmesinde spotter arayanları gör, "Spot isteği gönder". Kabul edilince "Mesajlar" açılır.
+3. Kendin de ilan açabilirsin. Kapıdan çıkınca ilan ve eşleşmeler kendiliğinden kapanır.
+
+### Resepsiyon
+1. Kapı ekranında üst menüden "Resepsiyon". İptal için salon sahibi PIN'iyle girin; gişe PIN'i satış ve dondurma yapabilir, iptal edemez.
+2. Ad, soyad veya telefonla arayın; arama boşken bu hafta üyeliği bitecekler listelenir.
+3. Üyeyi seçin: "Paket sat" (paket ve ödeme türü), "Dondur" / "Dondurmayı kaldır", "İptal et". Her işlem "İşlem geçmişi"ne yazılır ve üyenin telefonuna anında düşer.
+
+### Yeni üye kaydı
+1. Resepsiyonda arama kutusunun yanındaki "Yeni üye": ad soyad ve cep telefonu. Numara kayıtlıysa uyarı ve "Üyeyi aç" çıkar.
+2. KVKK: aydınlatma metni okundu onayı zorunlu. Boy, kilo, doğum yılı, cinsiyet ve hedef yalnızca "açık rıza" işaretlenirse girilir ve kaydedilir.
+3. Paket (isteğe bağlı) ve ödeme türü, sonra "Kaydı aç". Ekranda 6 haneli etkinleştirme kodu çıkar, 15 dakika geçerli.
+4. Telefonda giriş ekranındaki "İlk kez mi giriyorsun? Kodla etkinleştir": telefon, kod ve yeni şifre. Uygulama açılır, resepsiyondaki kart "Etkin" olur.
+
+Şifresini unutan üyeye üye kartındaki "Şifre yenileme kodu ver" ile yeni kod verilir; yeni şifre belirlenince üyenin eski oturumları kapanır. Uygulamada herkese açık kayıt yoktur, hesabı yalnızca personel açar. Örnek veride Selin Arıkan (`5550000999`) kaydedilmiş ama uygulamaya girmemiş olarak gelir; ona resepsiyondan kod verip akışı deneyebilirsiniz.
+
+### Eğitmen hesabı
+1. Salon sahibi PIN'iyle resepsiyonda "Yeni hesap" > **Eğitmen**: ad, telefon, eğitmen aydınlatma metni; ekrana etkinleştirme kodu çıkar. Gişe PIN'i eğitmen hesabı açamaz.
+2. Bir üyenin kartındaki "Eğitmen" bölümünden o eğitmeni atayın. Eğitmen yalnızca kendisine atanan üyeleri görür.
+3. Eğitmen telefonda kendi numarasıyla girer: "Üyelerim" (salondakiler en üstte, canlı), üyenin haftalık hacmi, son antrenmanları ve rekorları, "Program ata". Atanan program üyenin Antrenman sekmesine anında düşer.
+4. Eğitmen kapıdan üyelik aranmadan geçer; "AI Form" sekmesiyle üyesinin setini çekebilir.
+
+### AI form analizi
+1. Web: üst menüden "AI Form". Telefon: Antrenman sekmesindeki "AI Form" kartı ya da antrenman sırasında "Formunu AI ile kontrol et". Hareketi seçin: Squat, Bench press, Shoulder press, Biceps curl, Triceps pushdown.
+2. Squat, curl ve pushdown için kamera yanda; bench için sehpanın yanında, omuz hizasında; shoulder press için karşıdan, göğüs hizasında. Web'de "Video dosyası" ile çekilmiş bir set de açılabilir.
+3. Ekranda iskelet ve ölçülen açı, tekrar sayısı, yarım tekrarlar, en dip açı, kaldırma süresi ve yavaşlama görünür. "Sıfırla" yeni seti başlatır.
+
+Telefonda kamera ve model, uygulamanın içindeki bir web görünümünde çalışır; görüntü telefondan çıkmaz. Model ve MediaPipe çalışma dosyaları ilk açılışta internetten iner, bu yüzden telefonda internet gerekir. Ön ve arka kamera arasında "Arka kamera / Ön kamera" ile geçilir.
+
+Web'de model (`pose_landmarker_lite.task`, yaklaşık 6 MB) ilk açılışta Google'ın sunucusundan iner, tarayıcı saklar. İnternetsiz bir yerde çalışmak için bu dosyayı bir kez [buradan](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task) indirip `web\public\mediapipe\` klasörüne koyun; sayfa önce oraya bakar. Kamera görüntüsü bilgisayardan çıkmaz.
+
+### İkili görünüm ve çekim provası
+Üst menüden "İkili görünüm": kapı solda, resepsiyon sağda. Sayfanın üstündeki "Prova akışı" adım adım senaryoyu gösterir (QR ile giriş, dondur, kapının reddi, dondurmayı kaldır, süresi biten üyeye satış). Geniş ekranda (1600 piksel ve üstü) en iyi görünür.
+
+### Demo modu
+`server\.env` içinde `DEMO_SIMULATION=true` olursa sunucu kurgu bir salon hareketi üretir: üyeler kapıdan girip çıkar (salonda en az `DEMO_MIN_INSIDE` kişi), Burak, Kerem, Caner ve Emre spotter ilanı açar, isteklere ve mesajlara birkaç saniyede cevap verir; sen ilan açarsan biri sana istek gönderir. Prova ve çekim içindir; `false` yapınca kapanır.
+
 ## Demo hesapları
 
 Yalnızca yerel örnek veritabanı içindir.
@@ -48,9 +92,14 @@ Yalnızca yerel örnek veritabanı içindir.
 | Hesap | Bilgi |
 |---|---|
 | Demo üye (Erdem Albayrak) | Telefon `5550000001`, şifre `novra2026` |
-| Diğer 119 kurgu üye | Telefon `5550000002` ile `5550000120` arası, aynı şifre |
+| Diğer 485 kurgu üye | Telefon `5550000002` ile `5550000486` arası, aynı şifre |
+| Eğitmen: Hakan Koç (demo üyenin eğitmeni) | Telefon `5550001001`, aynı şifre |
+| Eğitmen: Derya Aksoy | Telefon `5550001002`, aynı şifre |
+| Yeni kayıt (Selin Arıkan) | Telefon `5550000999`, şifresi yok: resepsiyondan kod verip etkinleştirin |
 | Personel: Salon Sahibi | PIN `1907` |
 | Personel: Gişe | PIN `2024` |
+
+Yanlış PIN ya da şifre 15 dakikada 5 kez girilirse giriş 15 dakika kilitlenir; sunucuyu yeniden başlatmak kilidi sıfırlar.
 
 ## Örnek veriyi sıfırlamak
 
@@ -104,4 +153,8 @@ cd mobile; npx tsc --noEmit; npx expo lint
 | Kapı ekranında "Kamera bulunamadı" | Sayfayı `localhost` adresinden açın; başka bir program kamerayı kullanıyorsa kapatın. |
 | QR okunmuyor | Telefon parlaklığı QR ekranında kendiliğinden en yükseğe çıkar; telefonu kameraya 20-30 cm mesafede, düz tutun. |
 | "Kodun süresi geçmiş" | Telefon ve bilgisayar saatleri otomatik ayarlı olmalı; aradaki fark 30 saniyeyi geçmemeli. |
+| Kapı "Geçersiz kod" diyor | Telefondaki QR anahtarı eski (örnek veri yenilenmiş). Uygulama bunu açılışta kendiliğinden düzeltir, QR ekranında kısa süre "Kapı anahtarın yenileniyor" görünür. Sürerse Profil sekmesinden "Çıkış yap", sonra tekrar giriş yap. |
 | Port kullanımda hatası | Önceki pencereleri kapatın; sunucu 3000, kapı ekranı 5173, Expo 8081 portunu kullanır. |
+| AI Form'da "Kamera açılamadı" | Kamera aynı anda tek sekmede çalışır; kapı ekranı başka bir sekmede açıksa kapatın. |
+| AI Form'da "Model yüklenemedi" | İnternet bağlantısını kontrol edin ya da modeli `web\public\mediapipe\` içine koyun (yukarıda). |
+| Tekrar sayılmıyor | Ölçülen eklemler (squat: kalça, diz, ayak bileği; bench: omuz, dirsek, bilek) görünmüyorsa ekranda "Vücudun kadrajda tam görünmüyor" yazar. Kamerayı yana alın, ışığı artırın. |

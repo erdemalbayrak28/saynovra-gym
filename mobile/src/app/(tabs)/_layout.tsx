@@ -1,15 +1,18 @@
 import { Tabs, type BottomTabBarProps } from 'expo-router/js-tabs';
-import { House, QrCode, UserRound } from 'lucide-react-native';
+import { Dumbbell, House, QrCode, UserRound, Users } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSession } from '@/lib/session';
 import { colors, fonts } from '@/ui/theme';
 
-const ICONS = { index: House, qr: QrCode, profile: UserRound } as const;
+const ICONS = { home: House, training: Dumbbell, qr: QrCode, buddy: Users, profile: UserRound } as const;
 
 export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.ink } }} tabBar={(props) => <TabBar {...props} />}>
-      <Tabs.Screen name="index" options={{ title: 'Ana Sayfa' }} />
+      <Tabs.Screen name="home" options={{ title: 'Ana Sayfa' }} />
+      <Tabs.Screen name="training" options={{ title: 'Antrenman' }} />
       <Tabs.Screen name="qr" options={{ title: 'QR Geçiş' }} />
+      <Tabs.Screen name="buddy" options={{ title: 'Buddy' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profil' }} />
     </Tabs>
   );
@@ -17,6 +20,7 @@ export default function TabsLayout() {
 
 /** Mockup tab bar: the QR tab is the raised lime button in the middle. */
 function TabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTabBarProps) {
+  const { buddyAlert } = useSession();
   return (
     <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       {state.routes.map((route, index) => {
@@ -24,6 +28,7 @@ function TabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTa
         const title = descriptors[route.key]?.options.title ?? route.name;
         const Icon = ICONS[route.name as keyof typeof ICONS] ?? House;
         const isQr = route.name === 'qr';
+        const alert = route.name === 'buddy' && buddyAlert && !focused;
         const onPress = () => {
           const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigateToTab(route.key);
@@ -36,13 +41,16 @@ function TabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTa
             onPress={onPress}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
-            accessibilityLabel={title}
+            accessibilityLabel={alert ? `${title}, yeni bildirim` : title}
             style={styles.item}
           >
             <View style={[isQr && styles.qrButton, isQr && focused && styles.qrButtonActive]}>
               <Icon size={isQr ? 22 : 20} color={isQr && focused ? colors.ink : tint} strokeWidth={2.2} />
+              {alert && <View style={styles.alertDot} />}
             </View>
-            <Text style={[styles.label, { color: tint }]}>{title}</Text>
+            <Text style={[styles.label, { color: tint }]} numberOfLines={1}>
+              {title}
+            </Text>
           </Pressable>
         );
       })}
@@ -68,5 +76,6 @@ const styles = StyleSheet.create({
     marginTop: -4,
   },
   qrButtonActive: { backgroundColor: colors.lime, borderColor: colors.lime },
+  alertDot: { position: 'absolute', top: -2, right: -4, width: 9, height: 9, borderRadius: 5, backgroundColor: colors.ok, borderWidth: 2, borderColor: colors.surface },
   label: { fontFamily: fonts.bodySemi, fontSize: 11 },
 });

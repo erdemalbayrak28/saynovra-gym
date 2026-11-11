@@ -1,9 +1,19 @@
 import type {
+  ActivationCodeResponse,
   CheckinDto,
+  CreateMemberRequest,
+  CreateMemberResponse,
+  FloorEvent,
   GateScanResponse,
+  MemberDetail,
+  MemberListItem,
+  PlanDto,
   Problem,
+  ReceptionSummary,
+  SellMembershipRequest,
   StaffLoginResponse,
   StaffSummary,
+  TrainerOption,
 } from '../../../shared/contract';
 import { API_URL } from './config';
 
@@ -51,4 +61,21 @@ export const api = {
   scan: (token: string, code: string) => request<GateScanResponse>('/gate/scan', { method: 'POST', body: { code }, token }),
   checkins: (token: string, limit = 30) => request<CheckinDto[]>(`/staff/checkins?limit=${limit}`, { token }),
   summary: (token: string) => request<StaffSummary>('/staff/summary', { token }),
+  floor: (token: string) => request<FloorEvent[]>('/staff/floor', { token }),
+
+  plans: (token: string) => request<PlanDto[]>('/staff/plans', { token }),
+  receptionSummary: (token: string) => request<ReceptionSummary>('/staff/reception/summary', { token }),
+  searchMembers: (token: string, query: string) => request<MemberListItem[]>(`/staff/members?q=${encodeURIComponent(query)}`, { token }),
+  expiringMembers: (token: string) => request<MemberListItem[]>('/staff/members/expiring', { token }),
+  member: (token: string, id: number) => request<MemberDetail>(`/staff/members/${id}`, { token }),
+  sell: (token: string, memberId: number, body: SellMembershipRequest) =>
+    request<MemberDetail>(`/staff/members/${memberId}/memberships`, { method: 'POST', body, token }),
+  createMember: (token: string, body: CreateMemberRequest) => request<CreateMemberResponse>('/staff/members', { method: 'POST', body, token }),
+  issueActivation: (token: string, memberId: number) =>
+    request<ActivationCodeResponse>(`/staff/members/${memberId}/activation`, { method: 'POST', body: {}, token }),
+  trainers: (token: string) => request<TrainerOption[]>('/staff/trainers', { token }),
+  assignTrainer: (token: string, memberId: number, trainerId: number | null) =>
+    request<MemberDetail>(`/staff/members/${memberId}/trainer`, { method: 'POST', body: { trainerId }, token }),
+  membershipAction: (token: string, membershipId: number, action: 'freeze' | 'unfreeze' | 'cancel') =>
+    request<MemberDetail>(`/staff/memberships/${membershipId}/${action}`, { method: 'POST', token }),
 };

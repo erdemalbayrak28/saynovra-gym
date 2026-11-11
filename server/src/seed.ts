@@ -2,11 +2,16 @@
 // All people are fictional. Re-run shortly before a demo so "inside now" reflects the current hour.
 
 import { rmSync } from 'node:fs';
-import { hashSecret, newQrSecret } from './auth.ts';
+import { hashSecret } from './auth.ts';
+import { seedCatalog } from './catalog.ts';
 import { loadConfig } from './config.ts';
 import { openDb, transaction, type Db } from './db.ts';
 import { DEMO_MEMBER_PASSWORD, DEMO_MEMBER_PHONE, DEMO_STAFF as STAFF } from './demo.ts';
-import { addDays, localDate } from './time.ts';
+import { KVKK_NOTICE_VERSION, KVKK_TRAINER_NOTICE_VERSION } from '../../shared/consent.ts';
+import { registerMember } from './onboarding.ts';
+import { expiringMembers, listPlans, sellMembership } from './reception.ts';
+import { seedTrainingHistory } from './seed-training.ts';
+import { addDays, localDate, startOfLocalDay } from './time.ts';
 
 const PLANS = [
   { name: 'Aylık', days: 30, priceTl: 1500, freezeDays: 0 },
@@ -25,7 +30,7 @@ const PERSONAS: { name: string; plan: PlanName; daysLeft: number; visitsPerWeek:
   { name: 'Emre Kaya', plan: '3 Aylık', daysLeft: 37, visitsPerWeek: 3 },
   { name: 'Mert Demir', plan: 'Aylık', daysLeft: -1, visitsPerWeek: 3 },
 ];
-const GENERATED_MEMBERS = 114;
+const GENERATED_MEMBERS = 480;
 
 const FIRST_NAMES = [
   'Ahmet', 'Ayşe', 'Mehmet', 'Zeynep', 'Can', 'Elif', 'Cem', 'Selin', 'Deniz', 'Ece', 'Kaan', 'Gizem',
@@ -48,6 +53,21 @@ const HISTORY_DAYS = 28;
 // Türkiye has stayed on UTC+3 all year since 2016; good enough for fabricating history.
 const UTC_OFFSET_HOURS = 3;
 const KURUS_PER_TL = 100;
+// Staff rows are inserted in DEMO_STAFF order: the owner first, then the desk.
+const OWNER_ID = 1;
+const DESK_ID = 2;
+const OPENING_HOUR = 7;
+const RENEWALS_TODAY = 4;
+// Registered at the desk today but has not opened the app yet: shows the onboarding flow.
+const NEW_MEMBER = { name: 'Selin Arıkan', phone: '5550000999' };
+// Trainer accounts (same demo password). The first one trains the demo member.
+const TRAINERS = [
+  { name: 'Hakan Koç', phone: '5550001001' },
+  { name: 'Derya Aksoy', phone: '5550001002' },
+] as const;
+const TRAINEES_PER_TRAINER = 20;
+/** Every this-many-th trainee has a programme their trainer assigned. */
+const ASSIGNED_PROGRAM_EVERY = 2;
 
 // mulberry32: tiny deterministic PRNG so every seed produces the same gym.
 function rng(seed: number): () => number {
@@ -80,6 +100,11 @@ async function main(): Promise<void> {
   const today = localDate(now, config.GYM_TIMEZONE);
   const random = rng(2026);
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
+  // Deterministic gate keys: re-seeding keeps phones that are already signed in working.
+  // Demo database only; real members get random keys at registration (auth.newQrSecret).
+  const secretRandom = rng(4242);
+  const demoQrSecret = () =>
+    Array.from({ length: 32 }, () => Math.floor(secretRandom() * 256).toString(16).padStart(2, '0')).join('');
 
   const staffHashes = await Promise.all(STAFF.map((s) => hashSecret(s.pin)));
   // Every fictional member shares the demo password, so one hash is enough.
@@ -92,7 +117,7 @@ async function main(): Promise<void> {
         s.name, s.role, staffHashes[i] ?? '', stamp, stamp,
       );
     });
-    const deskId = 2;
+    const deskId = DESK_ID;
 
     const planIds = new Map<PlanName, number>();
     for (const plan of PLANS) {
@@ -113,7 +138,7 @@ async function main(): Promise<void> {
         )
         .run(
           fullName, phone, memberHash, 1975 + Math.floor(random() * 30), extra.heightCm, extra.weightKg,
-          pick(['lose', 'gain', 'fit', 'strength'] as const), newQrSecret(), stamp, stamp, deskId,
+          pick(['lose', 'gain', 'fit', 'strength'] as const), demoQrSecret(), stamp, stamp, deskId,
         );
       return Number(result.lastInsertRowid);
     };
@@ -122,18 +147,29 @@ async function main(): Promise<void> {
       const endsOn = addDays(today, daysLeft);
       const startsOn = addDays(endsOn, -plan.days);
       const createdAt = `${startsOn}T07:00:00.000Z`;
+      const frozenFrom = status === 'frozen' ? addDays(today, -5) : null;
+      // Cancellations are the owner's; they happen some days into the membership.
+      const cancelledAt = status === 'cancelled' ? `${[addDays(startsOn, 10), today].sort()[0]}T09:00:00.000Z` : null;
       const result = db
         .prepare(
-          `INSERT INTO memberships (member_id, plan_id, starts_on, ends_on, status, frozen_from, price_kurus, created_at, modified_at, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO memberships (member_id, plan_id, starts_on, ends_on, status, frozen_from, price_kurus, created_at, modified_at, created_by, modified_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
-          memberId, planIds.get(plan.name) ?? 0, startsOn, endsOn, status, status === 'frozen' ? addDays(today, -5) : null,
-          plan.priceTl * KURUS_PER_TL, createdAt, createdAt, deskId,
+          memberId, planIds.get(plan.name) ?? 0, startsOn, endsOn, status, frozenFrom, plan.priceTl * KURUS_PER_TL,
+          createdAt, cancelledAt ?? createdAt, deskId, cancelledAt ? OWNER_ID : deskId,
         );
-      db.prepare('INSERT INTO payments (membership_id, amount_kurus, method, created_at, created_by) VALUES (?, ?, ?, ?, ?)').run(
-        Number(result.lastInsertRowid), plan.priceTl * KURUS_PER_TL, pick(['card', 'card', 'cash', 'transfer'] as const), createdAt, deskId,
-      );
+      const membershipId = Number(result.lastInsertRowid);
+      // A member joined when their first package was sold, not when the demo database was built.
+      db.prepare('UPDATE members SET created_at = MIN(created_at, ?), modified_at = MIN(modified_at, ?) WHERE id = ?').run(createdAt, createdAt, memberId);
+      const payment = db
+        .prepare('INSERT INTO payments (membership_id, amount_kurus, method, created_at, created_by) VALUES (?, ?, ?, ?, ?)')
+        .run(membershipId, plan.priceTl * KURUS_PER_TL, pick(['card', 'card', 'cash', 'transfer'] as const), createdAt, deskId);
+      // The same history reception writes, so seeded members look like they went through the desk.
+      const event = db.prepare('INSERT INTO membership_events (membership_id, type, payment_id, created_at, created_by) VALUES (?, ?, ?, ?, ?)');
+      event.run(membershipId, 'sale', Number(payment.lastInsertRowid), createdAt, deskId);
+      if (frozenFrom) event.run(membershipId, 'freeze', null, `${frozenFrom}T08:00:00.000Z`, deskId);
+      if (cancelledAt) event.run(membershipId, 'cancel', null, cancelledAt, OWNER_ID);
       members.push({ id: memberId, plan, startsOn, endsOn, status, visitsPerWeek });
     };
 
@@ -152,24 +188,98 @@ async function main(): Promise<void> {
       });
       const roll = random();
       const status = roll < 0.04 ? 'cancelled' : roll < 0.1 ? 'frozen' : 'active';
-      const daysLeft = random() < 0.08 ? -Math.ceil(random() * 20) : Math.ceil(random() * 300);
-      addMembership(id, pick(PLANS).name, daysLeft, status, 2 + Math.floor(random() * 4));
+      const plan = pick(PLANS);
+      // Days left can never exceed the plan's length, or the membership would start in the future.
+      const daysLeft = random() < 0.08 ? -Math.ceil(random() * 20) : Math.ceil(random() * plan.days);
+      addMembership(id, plan.name, daysLeft, status, 2 + Math.floor(random() * 4));
     }
 
-    return insertHistory(db, members, now, today, random);
+    // Everyone so far signed up at the desk with the KVKK notice and consent for the optional
+    // fields (they have height and weight on file), and has since set a password in the app.
+    db.prepare(
+      `INSERT INTO member_consents (member_id, kind, version, granted, created_at, created_by)
+       SELECT m.id, k.kind, ?, 1, m.created_at, ? FROM members m
+       CROSS JOIN (SELECT 'notice' AS kind UNION ALL SELECT 'optional_data') k
+       ORDER BY m.id, k.kind`,
+    ).run(KVKK_NOTICE_VERSION, deskId);
+    db.prepare('UPDATE members SET activated_at = created_at').run();
+
+    const programIds = seedCatalog(db, now);
+    const workouts = seedTrainingHistory(db, { memberId: 1, programId: programIds.get('hipertrofi-ust-alt') ?? 0, today });
+    seedTrainers(db, { passwordHash: memberHash, stamp, staffId: OWNER_ID, programIds: [...programIds.values()], secret: demoQrSecret });
+    return { ...insertHistory(db, members, now, today, random), workouts };
   });
+  const renewalsToday = sellTodaysRenewals(db, now, today, config.GYM_TIMEZONE, random);
+  // The code it gets expires in minutes; at the demo the desk hands out a fresh one.
+  await registerMember(
+    db,
+    {
+      role: 'member',
+      fullName: NEW_MEMBER.name,
+      phone: NEW_MEMBER.phone,
+      noticeVersion: KVKK_NOTICE_VERSION,
+      consents: { notice: true, optionalData: false },
+      profile: { birthYear: null, gender: null, heightCm: null, weightKg: null, goal: null },
+      sale: { planId: listPlans(db).find((plan) => plan.name === 'Aylık')?.id ?? 1, method: 'card' },
+    },
+    { staffId: DESK_ID, now, today },
+  );
 
   db.close();
   console.log(
     JSON.stringify({
       seeded: config.DB_PATH,
-      members: PERSONAS.length + GENERATED_MEMBERS,
+      members: PERSONAS.length + GENERATED_MEMBERS + 1,
+      trainers: TRAINERS.map((trainer) => trainer.phone),
+      notActivated: NEW_MEMBER.phone,
       checkins: summary.checkins,
       insideNow: summary.insideNow,
+      renewalsToday,
+      demoWorkouts: summary.workouts,
       demoMemberPhone: DEMO_MEMBER_PHONE,
       note: 'Demo şifresi ve PIN\'ler README.md içinde',
     }),
   );
+}
+
+/**
+ * Two trainers with their members. The demo member (id 1) belongs to the first trainer, who also
+ * assigned the programme the demo member is on; some other trainees have an assigned programme too.
+ */
+function seedTrainers(
+  db: Db,
+  input: { passwordHash: string; stamp: string; staffId: number; programIds: number[]; secret: () => string },
+): void {
+  const addTrainer = db.prepare(
+    `INSERT INTO members (role, full_name, phone, password_hash, qr_secret, created_at, modified_at, created_by, modified_by, activated_at)
+     VALUES ('trainer', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const consent = db.prepare(
+    "INSERT INTO member_consents (member_id, kind, version, granted, created_at, created_by) VALUES (?, 'notice', ?, 1, ?, ?)",
+  );
+  const assign = db.prepare('UPDATE members SET trainer_id = ?, modified_by = ? WHERE id = ?');
+  const enrol = db.prepare(
+    'INSERT INTO member_programs (member_id, program_id, next_day_index, started_at, created_at, modified_at, assigned_by) VALUES (?, ?, 1, ?, ?, ?, ?)',
+  );
+
+  TRAINERS.forEach((trainer, index) => {
+    const { stamp, staffId } = input;
+    const trainerId = Number(addTrainer.run(trainer.name, trainer.phone, input.passwordHash, input.secret(), stamp, stamp, staffId, staffId, stamp).lastInsertRowid);
+    consent.run(trainerId, KVKK_TRAINER_NOTICE_VERSION, stamp, staffId);
+
+    // Members 2.. in blocks; the first trainer also gets the demo member.
+    const first = 2 + index * TRAINEES_PER_TRAINER;
+    const trainees = Array.from({ length: TRAINEES_PER_TRAINER }, (_, i) => first + i);
+    if (index === 0) trainees.unshift(1);
+    trainees.forEach((memberId, i) => {
+      assign.run(trainerId, staffId, memberId);
+      if (memberId === 1) {
+        db.prepare('UPDATE member_programs SET assigned_by = ? WHERE member_id = 1 AND ended_at IS NULL').run(trainerId);
+      } else if (i % ASSIGNED_PROGRAM_EVERY === 0) {
+        enrol.run(memberId, input.programIds[i % input.programIds.length] ?? 1, stamp, stamp, stamp, trainerId);
+      }
+    });
+  });
 }
 
 function insertHistory(db: Db, members: SeedMember[], now: Date, today: string, random: () => number) {
@@ -219,6 +329,24 @@ function insertHistory(db: Db, members: SeedMember[], now: Date, today: string, 
     }
   }
   return { checkins, insideNow };
+}
+
+/**
+ * A few members whose memberships end this week renewed earlier today, through the same code the
+ * reception desk uses, so the day's takings and the call list look like a working day.
+ */
+function sellTodaysRenewals(db: Db, now: Date, today: string, timeZone: string, random: () => number): number {
+  const opening = new Date(new Date(startOfLocalDay(now, timeZone)).getTime() + OPENING_HOUR * 60 * 60 * 1000);
+  if (now <= opening) return 0;
+  const plans = new Map(listPlans(db).map((plan) => [plan.name, plan.id]));
+  const candidates = expiringMembers(db, today, now).slice(0, RENEWALS_TODAY);
+  candidates.forEach((member) => {
+    const planId = plans.get(member.membership?.planName ?? '');
+    if (!planId) return;
+    const soldAt = new Date(opening.getTime() + random() * (now.getTime() - opening.getTime()));
+    sellMembership(db, member.id, { planId, method: random() < 0.7 ? 'card' : 'cash' }, { staffId: DESK_ID, now: soldAt, today });
+  });
+  return candidates.length;
 }
 
 main().catch((err: unknown) => {

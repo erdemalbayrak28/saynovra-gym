@@ -18,7 +18,7 @@ const STATE_TEXT: Record<Exclude<CameraState, 'running'>, string> = {
  * Reads QR codes from the default camera. `paused` stops decoding without releasing the camera,
  * so the preview stays live while a result is on screen.
  */
-export function QrScanner({ onCode, paused }: { onCode: (text: string) => void; paused: boolean }) {
+export function QrScanner({ onCode, paused, short = false }: { onCode: (text: string) => void; paused: boolean; short?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onCodeRef = useRef(onCode);
   const pausedRef = useRef(paused);
@@ -96,7 +96,7 @@ export function QrScanner({ onCode, paused }: { onCode: (text: string) => void; 
   }, []);
 
   return (
-    <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-line bg-black">
+    <div className={`relative overflow-hidden rounded-2xl border border-line bg-black ${short ? 'aspect-video' : 'aspect-[4/3]'}`}>
       <video ref={videoRef} className="h-full w-full -scale-x-100 object-cover" muted playsInline />
 
       {state === 'running' ? (

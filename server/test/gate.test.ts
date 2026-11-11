@@ -4,7 +4,7 @@ import { GATE_STEP_SECONDS, createGateCode, type GateDirection } from '../../sha
 import { gateSigner, newQrSecret } from '../src/auth.ts';
 import type { Db } from '../src/db.ts';
 import { scanGateCode } from '../src/domain/gate.ts';
-import { insideCount, isInside } from '../src/queries.ts';
+import { insideCount, isInside, presenceSeq } from '../src/queries.ts';
 import { TZ, addMember, addMembership, addPlan, testDb } from './helpers.ts';
 
 const NOW = new Date('2026-11-09T17:30:10Z');
@@ -19,8 +19,9 @@ describe('gate scan', () => {
   let db: Db;
   let member: { id: number; qrSecret: string };
   let planId: number;
+  /** What the phone would show right now: the member's current presence sequence. */
   const code = (direction: GateDirection, at = NOW, who = member) =>
-    createGateCode(who.id, direction, at.getTime(), gateSigner(who.qrSecret));
+    createGateCode(who.id, direction, presenceSeq(db, who.id), at.getTime(), gateSigner(who.qrSecret));
   const scan = (raw: string, at = NOW) => scanGateCode(db, raw, at, TZ);
 
   beforeEach(() => {
@@ -43,13 +44,20 @@ describe('gate scan', () => {
     assert.equal(insideCount(db, later), 0);
   });
 
+  it('allows in, out and in again within one 30 second step', () => {
+    addMembership(db, member.id, planId, NOW);
+    assert.equal(scan(code('in')).granted, true);
+    assert.equal(scan(code('out')).granted, true);
+    assert.equal(scan(code('in')).granted, true);
+  });
+
   it('rejects garbage and unknown members', () => {
     assert.equal(reasonOf(db, scan('not a code').checkinId), 'invalid_format');
     const stranger = { id: 999, qrSecret: newQrSecret() };
-    assert.equal(reasonOf(db, scan(code('in', NOW, stranger)).checkinId), 'unknown_member');
+    assert.equal(reasonOf(db, scan(createGateCode(999, 'in', 0, NOW.getTime(), gateSigner(stranger.qrSecret))).checkinId), 'unknown_member');
   });
 
-  it('rejects a code signed with someone else\'s secret', () => {
+  it("rejects a code signed with someone else's secret", () => {
     addMembership(db, member.id, planId, NOW);
     const forged = code('in', NOW, { id: member.id, qrSecret: newQrSecret() });
     assert.equal(reasonOf(db, scan(forged).checkinId), 'bad_signature');
@@ -66,21 +74,30 @@ describe('gate scan', () => {
     assert.equal(reasonOf(db, scan(code('in', screenshot, other)).checkinId), 'expired_code');
   });
 
-  it('rejects the same code twice', () => {
+  it('rejects a code once it, or any later code, has been used', () => {
     addMembership(db, member.id, planId, NOW);
-    const raw = code('in');
-    assert.equal(scan(raw).granted, true);
-    assert.equal(reasonOf(db, scan(raw).checkinId), 'replayed');
+    const entryCode = code('in');
+    assert.equal(scan(entryCode).granted, true);
+    assert.equal(reasonOf(db, scan(entryCode).checkinId), 'stale_code');
+
+    // A screenshot of the entry code, shown again after the member has left.
+    assert.equal(scan(code('out')).granted, true);
+    assert.equal(reasonOf(db, scan(entryCode).checkinId), 'stale_code');
+  });
+
+  it('denied attempts do not invalidate the current code', () => {
+    addMembership(db, member.id, planId, NOW);
+    scan('garbage');
+    scan(code('out'));
+    assert.equal(scan(code('in')).granted, true);
   });
 
   it('enforces anti-passback in both directions', () => {
     addMembership(db, member.id, planId, NOW);
     assert.equal(reasonOf(db, scan(code('out')).checkinId), 'not_inside');
 
-    const entryAt = new Date(NOW.getTime() + STEP_MS);
-    assert.equal(scan(code('in', entryAt), entryAt).granted, true);
-    const again = new Date(NOW.getTime() + 2 * STEP_MS);
-    assert.equal(reasonOf(db, scan(code('in', again), again).checkinId), 'already_inside');
+    assert.equal(scan(code('in')).granted, true);
+    assert.equal(reasonOf(db, scan(code('in')).checkinId), 'already_inside');
   });
 
   it('turns members away for membership problems', () => {
